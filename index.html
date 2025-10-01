@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <!-- Version: 2.0 - Phase 1 Implementation -->
+  <!-- Version: 2.2 - Pause on score, wider field with edge control zones -->
   <div id="root"></div>
 
   <script type="text/babel">
@@ -30,19 +30,18 @@
       const [gameState, setGameState] = useState('countdown');
       const [scores, setScores] = useState({ left: 0, right: 0 });
       const [countdown, setCountdown] = useState(3);
-      const [scoreEffect, setScoreEffect] = useState(null);
-      const blinkIntervalRef = useRef(null);
+      const [blinkVisible, setBlinkVisible] = useState(true);
+      const [blinkingPaddle, setBlinkingPaddle] = useState(null);
       
       const gameRef = useRef({
-        ball: { x: 400, y: 300, vx: 5, vy: 3, size: 15 },
+        ball: { x: 500, y: 300, vx: 5, vy: 3, size: 15 },
         paddles: {
-          left: { x: 30, y: 250, width: 20, height: 120 },
-          right: { x: 750, y: 250, width: 20, height: 120 }
+          left: { x: 50, y: 250, width: 20, height: 120 },
+          right: { x: 930, y: 250, width: 20, height: 120 }
         },
         touches: {},
-        canvasWidth: 800,
-        canvasHeight: 600,
-        marginSize: 40
+        canvasWidth: 1000,
+        canvasHeight: 600
       });
 
       // Countdown logic
@@ -59,6 +58,37 @@
         }
       }, [countdown, gameState]);
 
+      // Blink effect logic for score
+      useEffect(() => {
+        if (gameState === 'paused' && blinkingPaddle) {
+          let count = 0;
+          setBlinkVisible(false);
+          
+          const interval = setInterval(() => {
+            count++;
+            setBlinkVisible(prev => !prev);
+            
+            if (count >= 6) {
+              clearInterval(interval);
+              setBlinkVisible(true);
+              setBlinkingPaddle(null);
+              
+              // Reset ball and resume game
+              const game = gameRef.current;
+              game.ball.x = game.canvasWidth / 2;
+              game.ball.y = game.canvasHeight / 2;
+              game.ball.vx = (Math.random() > 0.5 ? 1 : -1) * 5;
+              game.ball.vy = (Math.random() - 0.5) * 6;
+              
+              setGameState('playing');
+            }
+          }, 150);
+          
+          return () => clearInterval(interval);
+        }
+      }, [gameState, blinkingPaddle]);
+
+      // Main game loop
       useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -68,7 +98,14 @@
         
         let animationId;
         const gameLoop = () => {
-          if (gameState !== 'playing') return;
+          if (gameState !== 'playing') {
+            // Still draw even when paused
+            draw();
+            if (gameState === 'paused') {
+              animationId = requestAnimationFrame(gameLoop);
+            }
+            return;
+          }
           
           game.ball.x += game.ball.vx;
           game.ball.y += game.ball.vy;
@@ -99,24 +136,29 @@
               if (newScores.right >= 11) {
                 setGameState('finished');
               } else {
-                triggerScoreEffect();
+                setBlinkingPaddle('left');
+                setGameState('paused');
               }
               return newScores;
             });
-            resetBall();
           } else if (game.ball.x > game.canvasWidth) {
             setScores(prev => {
               const newScores = { ...prev, left: prev.left + 1 };
               if (newScores.left >= 11) {
                 setGameState('finished');
               } else {
-                triggerScoreEffect();
+                setBlinkingPaddle('right');
+                setGameState('paused');
               }
               return newScores;
             });
-            resetBall();
           }
           
+          draw();
+          animationId = requestAnimationFrame(gameLoop);
+        };
+        
+        const draw = () => {
           ctx.fillStyle = '#000';
           ctx.fillRect(0, 0, game.canvasWidth, game.canvasHeight);
           
@@ -128,44 +170,21 @@
           ctx.stroke();
           ctx.setLineDash([]);
           
-          // Draw paddles and ball (blink during score effect)
-          if (!scoreEffect || scoreEffect.visible) {
-            ctx.fillStyle = '#fff';
+          // Draw paddles with blink effect
+          ctx.fillStyle = '#fff';
+          if (blinkingPaddle !== 'left' || blinkVisible) {
             ctx.fillRect(game.paddles.left.x, game.paddles.left.y, game.paddles.left.width, game.paddles.left.height);
+          }
+          if (blinkingPaddle !== 'right' || blinkVisible) {
             ctx.fillRect(game.paddles.right.x, game.paddles.right.y, game.paddles.right.width, game.paddles.right.height);
-            
+          }
+          
+          // Draw ball with blink effect
+          if (!blinkingPaddle || blinkVisible) {
             ctx.beginPath();
             ctx.arc(game.ball.x, game.ball.y, game.ball.size, 0, Math.PI * 2);
             ctx.fill();
           }
-          
-          animationId = requestAnimationFrame(gameLoop);
-        };
-        
-        const resetBall = () => {
-          game.ball.x = game.canvasWidth / 2;
-          game.ball.y = game.canvasHeight / 2;
-          game.ball.vx = (Math.random() > 0.5 ? 1 : -1) * 5;
-          game.ball.vy = (Math.random() - 0.5) * 6;
-        };
-        
-        const triggerScoreEffect = () => {
-          let blinkCount = 0;
-          setScoreEffect({ visible: true });
-          
-          if (blinkIntervalRef.current) {
-            clearInterval(blinkIntervalRef.current);
-          }
-          
-          blinkIntervalRef.current = setInterval(() => {
-            blinkCount++;
-            setScoreEffect(prev => prev ? { visible: !prev.visible } : null);
-            
-            if (blinkCount >= 6) {
-              clearInterval(blinkIntervalRef.current);
-              setScoreEffect(null);
-            }
-          }, 150);
         };
         
         const handleTouchStart = (e) => {
@@ -188,22 +207,19 @@
               const touchX = touch.clientX - rect.left;
               const touchY = touch.clientY - rect.top;
               
-              const scaleX = (game.canvasWidth + game.marginSize * 2) / rect.width;
+              const scaleX = game.canvasWidth / rect.width;
               const scaleY = game.canvasHeight / rect.height;
-              const scaledX = touchX * scaleX - game.marginSize;
+              
+              const scaledX = touchX * scaleX;
               const scaledY = touchY * scaleY;
               
-              // Determine which paddle to control based on touch X position (including margins)
-              const actualTouchX = touchX * scaleX;
-              
-              if (actualTouchX < game.marginSize + game.canvasWidth / 2) {
-                // Left side (including left margin) controls left paddle
+              // Left half controls left paddle, right half controls right paddle
+              if (scaledX < game.canvasWidth / 2) {
                 game.paddles.left.y = Math.max(0, Math.min(
                   game.canvasHeight - game.paddles.left.height,
                   scaledY - game.paddles.left.height / 2
                 ));
               } else {
-                // Right side (including right margin) controls right paddle
                 game.paddles.right.y = Math.max(0, Math.min(
                   game.canvasHeight - game.paddles.right.height,
                   scaledY - game.paddles.right.height / 2
@@ -226,7 +242,7 @@
         canvas.addEventListener('touchmove', handleTouchMove);
         canvas.addEventListener('touchend', handleTouchEnd);
         
-        if (gameState === 'playing') {
+        if (gameState === 'playing' || gameState === 'paused') {
           gameLoop();
         }
         
@@ -235,19 +251,17 @@
           canvas.removeEventListener('touchstart', handleTouchStart);
           canvas.removeEventListener('touchmove', handleTouchMove);
           canvas.removeEventListener('touchend', handleTouchEnd);
-          if (blinkIntervalRef.current) {
-            clearInterval(blinkIntervalRef.current);
-          }
         };
-      }, [gameState, scoreEffect]);
+      }, [gameState, blinkVisible, blinkingPaddle]);
       
       const resetGame = () => {
         setScores({ left: 0, right: 0 });
         setCountdown(3);
         setGameState('countdown');
-        setScoreEffect(null);
+        setBlinkVisible(true);
+        setBlinkingPaddle(null);
         const game = gameRef.current;
-        game.ball.x = 400;
+        game.ball.x = 500;
         game.ball.y = 300;
         game.ball.vx = 5;
         game.ball.vy = 3;
@@ -260,13 +274,13 @@
             <div>P2: {scores.right}</div>
           </div>
           
-          <div className="relative" style={{ paddingLeft: '40px', paddingRight: '40px' }}>
+          <div className="relative w-full max-w-full">
             <canvas
               ref={canvasRef}
-              width={800}
+              width={1000}
               height={600}
               className="border-4 border-gray-700 touch-none w-full max-w-full"
-              style={{ maxHeight: '70vh', display: 'block' }}
+              style={{ maxHeight: '70vh', display: 'block', margin: '0 auto' }}
             />
             
             {gameState === 'countdown' && (
@@ -294,7 +308,7 @@
           
           <div className="mt-2 text-gray-400 text-center text-xs retro-font">
             <p>First to 11 wins!</p>
-            <p className="text-gray-600 mt-1">v2.0</p>
+            <p className="text-gray-600 mt-1">v2.2</p>
           </div>
         </div>
       );
