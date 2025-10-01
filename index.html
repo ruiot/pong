@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <!-- Version: 2.5 - Mode selection and menu screen -->
+  <!-- Version: 2.6 - Default sound/split ON, ball collision sound, outer walls -->
   <div id="root"></div>
 
   <script type="text/babel">
@@ -33,8 +33,8 @@
       const [countdown, setCountdown] = useState(3);
       const [blinkVisible, setBlinkVisible] = useState(true);
       const [blinkingPaddle, setBlinkingPaddle] = useState(null);
-      const [soundEnabled, setSoundEnabled] = useState(false);
-      const [gameMode, setGameMode] = useState('standard');
+      const [soundEnabled, setSoundEnabled] = useState(true);
+      const [gameMode, setGameMode] = useState('split');
       
       const gameRef = useRef({
         balls: [{ x: 500, y: 300, vx: 5, vy: 3, size: 12, isMain: true, color: '#fff' }],
@@ -79,6 +79,12 @@
             oscillator.start();
             oscillator.stop(ctx.currentTime + 0.05);
             break;
+          case 'ball':
+            oscillator.frequency.value = 250;
+            gainNode.gain.value = 0.06;
+            oscillator.start();
+            oscillator.stop(ctx.currentTime + 0.04);
+            break;
           case 'score':
             oscillator.frequency.value = 150;
             gainNode.gain.value = 0.15;
@@ -106,6 +112,7 @@
       };
 
       const startGame = () => {
+        initAudio();
         setCountdown(3);
         setGameState('countdown');
       };
@@ -187,10 +194,18 @@
           });
           
           // Wall collision for all balls
+          const OUTER_WALL_OFFSET = 500;
           game.balls.forEach(ball => {
+            // Top/bottom walls
             if (ball.y - ball.size <= 0 || ball.y + ball.size >= game.canvasHeight) {
               ball.vy *= -1;
               playSound('wall');
+            }
+            
+            // Left/right outer walls (invisible, no sound)
+            if (ball.x - ball.size <= -OUTER_WALL_OFFSET || 
+                ball.x + ball.size >= game.canvasWidth + OUTER_WALL_OFFSET) {
+              ball.vx *= -1;
             }
           });
           
@@ -225,6 +240,8 @@
                   b1.vy = b2.vy;
                   b2.vx = tempVx;
                   b2.vy = tempVy;
+                  
+                  playSound('ball');
                 }
               }
             }
@@ -486,7 +503,7 @@
               >
                 MODE: {gameMode.toUpperCase()}
               </button>
-              <span className="text-gray-600">v2.5</span>
+              <span className="text-gray-600">v2.6</span>
             </div>
             <div>P2</div>
           </div>
