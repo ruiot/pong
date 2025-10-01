@@ -31,6 +31,7 @@
       const [scores, setScores] = useState({ left: 0, right: 0 });
       const [countdown, setCountdown] = useState(3);
       const [scoreEffect, setScoreEffect] = useState(null);
+      const blinkIntervalRef = useRef(null);
       
       const gameRef = useRef({
         ball: { x: 400, y: 300, vx: 5, vy: 3, size: 15 },
@@ -41,7 +42,7 @@
         touches: {},
         canvasWidth: 800,
         canvasHeight: 600,
-        marginSize: 60
+        marginSize: 40
       });
 
       // Countdown logic
@@ -98,8 +99,7 @@
               if (newScores.right >= 11) {
                 setGameState('finished');
               } else {
-                setScoreEffect('right');
-                setTimeout(() => setScoreEffect(null), 1000);
+                triggerScoreEffect();
               }
               return newScores;
             });
@@ -110,8 +110,7 @@
               if (newScores.left >= 11) {
                 setGameState('finished');
               } else {
-                setScoreEffect('left');
-                setTimeout(() => setScoreEffect(null), 1000);
+                triggerScoreEffect();
               }
               return newScores;
             });
@@ -121,12 +120,6 @@
           ctx.fillStyle = '#000';
           ctx.fillRect(0, 0, game.canvasWidth, game.canvasHeight);
           
-          // Score effect
-          if (scoreEffect) {
-            ctx.fillStyle = scoreEffect === 'left' ? 'rgba(74, 222, 128, 0.3)' : 'rgba(96, 165, 250, 0.3)';
-            ctx.fillRect(0, 0, game.canvasWidth, game.canvasHeight);
-          }
-          
           ctx.strokeStyle = '#444';
           ctx.setLineDash([10, 10]);
           ctx.beginPath();
@@ -135,13 +128,16 @@
           ctx.stroke();
           ctx.setLineDash([]);
           
-          ctx.fillStyle = '#fff';
-          ctx.fillRect(game.paddles.left.x, game.paddles.left.y, game.paddles.left.width, game.paddles.left.height);
-          ctx.fillRect(game.paddles.right.x, game.paddles.right.y, game.paddles.right.width, game.paddles.right.height);
-          
-          ctx.beginPath();
-          ctx.arc(game.ball.x, game.ball.y, game.ball.size, 0, Math.PI * 2);
-          ctx.fill();
+          // Draw paddles and ball (blink during score effect)
+          if (!scoreEffect || scoreEffect.visible) {
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(game.paddles.left.x, game.paddles.left.y, game.paddles.left.width, game.paddles.left.height);
+            ctx.fillRect(game.paddles.right.x, game.paddles.right.y, game.paddles.right.width, game.paddles.right.height);
+            
+            ctx.beginPath();
+            ctx.arc(game.ball.x, game.ball.y, game.ball.size, 0, Math.PI * 2);
+            ctx.fill();
+          }
           
           animationId = requestAnimationFrame(gameLoop);
         };
@@ -151,6 +147,25 @@
           game.ball.y = game.canvasHeight / 2;
           game.ball.vx = (Math.random() > 0.5 ? 1 : -1) * 5;
           game.ball.vy = (Math.random() - 0.5) * 6;
+        };
+        
+        const triggerScoreEffect = () => {
+          let blinkCount = 0;
+          setScoreEffect({ visible: true });
+          
+          if (blinkIntervalRef.current) {
+            clearInterval(blinkIntervalRef.current);
+          }
+          
+          blinkIntervalRef.current = setInterval(() => {
+            blinkCount++;
+            setScoreEffect(prev => prev ? { visible: !prev.visible } : null);
+            
+            if (blinkCount >= 6) {
+              clearInterval(blinkIntervalRef.current);
+              setScoreEffect(null);
+            }
+          }, 150);
         };
         
         const handleTouchStart = (e) => {
@@ -178,12 +193,17 @@
               const scaledX = touchX * scaleX - game.marginSize;
               const scaledY = touchY * scaleY;
               
-              if (scaledX < game.canvasWidth / 2) {
+              // Determine which paddle to control based on touch X position (including margins)
+              const actualTouchX = touchX * scaleX;
+              
+              if (actualTouchX < game.marginSize + game.canvasWidth / 2) {
+                // Left side (including left margin) controls left paddle
                 game.paddles.left.y = Math.max(0, Math.min(
                   game.canvasHeight - game.paddles.left.height,
                   scaledY - game.paddles.left.height / 2
                 ));
               } else {
+                // Right side (including right margin) controls right paddle
                 game.paddles.right.y = Math.max(0, Math.min(
                   game.canvasHeight - game.paddles.right.height,
                   scaledY - game.paddles.right.height / 2
@@ -215,6 +235,9 @@
           canvas.removeEventListener('touchstart', handleTouchStart);
           canvas.removeEventListener('touchmove', handleTouchMove);
           canvas.removeEventListener('touchend', handleTouchEnd);
+          if (blinkIntervalRef.current) {
+            clearInterval(blinkIntervalRef.current);
+          }
         };
       }, [gameState, scoreEffect]);
       
@@ -237,7 +260,7 @@
             <div>P2: {scores.right}</div>
           </div>
           
-          <div className="relative" style={{ paddingLeft: '60px', paddingRight: '60px' }}>
+          <div className="relative" style={{ paddingLeft: '40px', paddingRight: '40px' }}>
             <canvas
               ref={canvasRef}
               width={800}
@@ -269,8 +292,8 @@
             </div>
           )}
           
-          <div className="mt-2 text-gray-400 text-center text-xs">
-            <p>11点先取で勝利！</p>
+          <div className="mt-2 text-gray-400 text-center text-xs retro-font">
+            <p>First to 11 wins!</p>
             <p className="text-gray-600 mt-1">v2.0</p>
           </div>
         </div>
