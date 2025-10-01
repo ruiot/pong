@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -19,19 +18,21 @@
   </style>
 </head>
 <body>
-  <!-- Version: 2.2 - Pause on score, wider field with edge control zones -->
+  <!-- Version: 2.3 - Clean UI and sound effects -->
   <div id="root"></div>
-
+  
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
     function PongGame() {
       const canvasRef = useRef(null);
+      const audioContextRef = useRef(null);
       const [gameState, setGameState] = useState('countdown');
       const [scores, setScores] = useState({ left: 0, right: 0 });
       const [countdown, setCountdown] = useState(3);
       const [blinkVisible, setBlinkVisible] = useState(true);
       const [blinkingPaddle, setBlinkingPaddle] = useState(null);
+      const [soundEnabled, setSoundEnabled] = useState(false);
       
       const gameRef = useRef({
         ball: { x: 500, y: 300, vx: 5, vy: 3, size: 15 },
@@ -44,6 +45,59 @@
         canvasHeight: 600
       });
 
+      // Initialize audio context
+      const initAudio = () => {
+        if (!audioContextRef.current) {
+          audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        }
+      };
+
+      // Sound effects
+      const playSound = (type) => {
+        if (!soundEnabled || !audioContextRef.current) return;
+        
+        const ctx = audioContextRef.current;
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        switch(type) {
+          case 'paddle':
+            oscillator.frequency.value = 220;
+            gainNode.gain.value = 0.1;
+            oscillator.start();
+            oscillator.stop(ctx.currentTime + 0.05);
+            break;
+          case 'wall':
+            oscillator.frequency.value = 180;
+            gainNode.gain.value = 0.08;
+            oscillator.start();
+            oscillator.stop(ctx.currentTime + 0.05);
+            break;
+          case 'score':
+            oscillator.frequency.value = 150;
+            gainNode.gain.value = 0.15;
+            oscillator.start();
+            oscillator.stop(ctx.currentTime + 0.2);
+            break;
+          case 'go':
+            oscillator.frequency.value = 440;
+            gainNode.gain.value = 0.12;
+            oscillator.start();
+            oscillator.stop(ctx.currentTime + 0.1);
+            break;
+        }
+      };
+
+      const toggleSound = () => {
+        if (!soundEnabled) {
+          initAudio();
+        }
+        setSoundEnabled(!soundEnabled);
+      };
+
       // Countdown logic
       useEffect(() => {
         if (gameState === 'countdown') {
@@ -53,6 +107,7 @@
             }, 1000);
             return () => clearTimeout(timer);
           } else {
+            playSound('go');
             setGameState('playing');
           }
         }
@@ -63,6 +118,7 @@
         if (gameState === 'paused' && blinkingPaddle) {
           let count = 0;
           setBlinkVisible(false);
+          playSound('score');
           
           const interval = setInterval(() => {
             count++;
@@ -99,7 +155,6 @@
         let animationId;
         const gameLoop = () => {
           if (gameState !== 'playing') {
-            // Still draw even when paused
             draw();
             if (gameState === 'paused') {
               animationId = requestAnimationFrame(gameLoop);
@@ -112,6 +167,7 @@
           
           if (game.ball.y - game.ball.size <= 0 || game.ball.y + game.ball.size >= game.canvasHeight) {
             game.ball.vy *= -1;
+            playSound('wall');
           }
           
           if (game.ball.x - game.ball.size <= game.paddles.left.x + game.paddles.left.width &&
@@ -120,6 +176,7 @@
               game.ball.vx < 0) {
             game.ball.vx *= -1.1;
             game.ball.vy += (Math.random() - 0.5) * 2;
+            playSound('paddle');
           }
           
           if (game.ball.x + game.ball.size >= game.paddles.right.x &&
@@ -128,6 +185,7 @@
               game.ball.vx > 0) {
             game.ball.vx *= -1.1;
             game.ball.vy += (Math.random() - 0.5) * 2;
+            playSound('paddle');
           }
           
           if (game.ball.x < 0) {
@@ -170,7 +228,6 @@
           ctx.stroke();
           ctx.setLineDash([]);
           
-          // Draw paddles with blink effect
           ctx.fillStyle = '#fff';
           if (blinkingPaddle !== 'left' || blinkVisible) {
             ctx.fillRect(game.paddles.left.x, game.paddles.left.y, game.paddles.left.width, game.paddles.left.height);
@@ -179,7 +236,6 @@
             ctx.fillRect(game.paddles.right.x, game.paddles.right.y, game.paddles.right.width, game.paddles.right.height);
           }
           
-          // Draw ball with blink effect
           if (!blinkingPaddle || blinkVisible) {
             ctx.beginPath();
             ctx.arc(game.ball.x, game.ball.y, game.ball.size, 0, Math.PI * 2);
@@ -213,7 +269,6 @@
               const scaledX = touchX * scaleX;
               const scaledY = touchY * scaleY;
               
-              // Left half controls left paddle, right half controls right paddle
               if (scaledX < game.canvasWidth / 2) {
                 game.paddles.left.y = Math.max(0, Math.min(
                   game.canvasHeight - game.paddles.left.height,
@@ -252,7 +307,7 @@
           canvas.removeEventListener('touchmove', handleTouchMove);
           canvas.removeEventListener('touchend', handleTouchEnd);
         };
-      }, [gameState, blinkVisible, blinkingPaddle]);
+      }, [gameState, blinkVisible, blinkingPaddle, soundEnabled]);
       
       const resetGame = () => {
         setScores({ left: 0, right: 0 });
@@ -269,9 +324,9 @@
 
       return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 p-2">
-          <div className="mb-2 flex gap-4 text-white text-2xl font-bold retro-font">
-            <div>P1: {scores.left}</div>
-            <div>P2: {scores.right}</div>
+          <div className="mb-4 flex justify-between items-center w-full max-w-4xl px-8">
+            <div className="text-white text-5xl font-bold retro-font">{scores.left}</div>
+            <div className="text-white text-5xl font-bold retro-font">{scores.right}</div>
           </div>
           
           <div className="relative w-full max-w-full">
@@ -290,25 +345,36 @@
                 </div>
               </div>
             )}
+            
+            {gameState === 'finished' && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-80">
+                <div className="text-center">
+                  <div className="text-white text-4xl mb-6 retro-font">
+                    {scores.left >= 11 ? 'P1' : 'P2'} Wins!
+                  </div>
+                  <button
+                    onClick={resetGame}
+                    className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded text-xl retro-font"
+                  >
+                    New Game
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
           
-          {gameState === 'finished' && (
-            <div className="mt-2 text-center">
-              <div className="text-white text-2xl mb-2 retro-font">
-                {scores.left >= 11 ? 'P1' : 'P2'} Wins!
-              </div>
-              <button
-                onClick={resetGame}
-                className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded text-lg retro-font"
+          <div className="mt-2 flex justify-between items-center w-full max-w-4xl px-8 text-gray-400 text-xs retro-font">
+            <div>P1</div>
+            <div className="flex gap-4 items-center">
+              <button 
+                onClick={toggleSound}
+                className="hover:text-gray-300 cursor-pointer"
               >
-                New Game
+                SOUND: {soundEnabled ? 'ON' : 'OFF'}
               </button>
+              <span className="text-gray-600">v2.3</span>
             </div>
-          )}
-          
-          <div className="mt-2 text-gray-400 text-center text-xs retro-font">
-            <p>First to 11 wins!</p>
-            <p className="text-gray-600 mt-1">v2.2</p>
+            <div>P2</div>
           </div>
         </div>
       );
@@ -317,6 +383,5 @@
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<PongGame />);
   </script>
-
 </body>
 </html>
