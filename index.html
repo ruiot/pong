@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -18,31 +19,33 @@
   </style>
 </head>
 <body>
-  <!-- Version: 2.3 - Clean UI and sound effects -->
+  <!-- Version: 2.5 - Mode selection and menu screen -->
   <div id="root"></div>
-  
+
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
     function PongGame() {
       const canvasRef = useRef(null);
       const audioContextRef = useRef(null);
-      const [gameState, setGameState] = useState('countdown');
+      const [gameState, setGameState] = useState('menu');
       const [scores, setScores] = useState({ left: 0, right: 0 });
       const [countdown, setCountdown] = useState(3);
       const [blinkVisible, setBlinkVisible] = useState(true);
       const [blinkingPaddle, setBlinkingPaddle] = useState(null);
       const [soundEnabled, setSoundEnabled] = useState(false);
+      const [gameMode, setGameMode] = useState('standard');
       
       const gameRef = useRef({
-        ball: { x: 500, y: 300, vx: 5, vy: 3, size: 15 },
+        balls: [{ x: 500, y: 300, vx: 5, vy: 3, size: 12, isMain: true, color: '#fff' }],
         paddles: {
           left: { x: 50, y: 250, width: 20, height: 120 },
           right: { x: 930, y: 250, width: 20, height: 120 }
         },
         touches: {},
         canvasWidth: 1000,
-        canvasHeight: 600
+        canvasHeight: 600,
+        hitCount: 0
       });
 
       // Initialize audio context
@@ -98,6 +101,15 @@
         setSoundEnabled(!soundEnabled);
       };
 
+      const toggleMode = () => {
+        setGameMode(prev => prev === 'standard' ? 'split' : 'standard');
+      };
+
+      const startGame = () => {
+        setCountdown(3);
+        setGameState('countdown');
+      };
+
       // Countdown logic
       useEffect(() => {
         if (gameState === 'countdown') {
@@ -129,12 +141,18 @@
               setBlinkVisible(true);
               setBlinkingPaddle(null);
               
-              // Reset ball and resume game
+              // Reset balls and resume game
               const game = gameRef.current;
-              game.ball.x = game.canvasWidth / 2;
-              game.ball.y = game.canvasHeight / 2;
-              game.ball.vx = (Math.random() > 0.5 ? 1 : -1) * 5;
-              game.ball.vy = (Math.random() - 0.5) * 6;
+              game.balls = [{ 
+                x: game.canvasWidth / 2, 
+                y: game.canvasHeight / 2, 
+                vx: (Math.random() > 0.5 ? 1 : -1) * 5, 
+                vy: (Math.random() - 0.5) * 6, 
+                size: 12, 
+                isMain: true, 
+                color: '#fff' 
+              }];
+              game.hitCount = 0;
               
               setGameState('playing');
             }
@@ -162,33 +180,112 @@
             return;
           }
           
-          game.ball.x += game.ball.vx;
-          game.ball.y += game.ball.vy;
+          // Move all balls
+          game.balls.forEach(ball => {
+            ball.x += ball.vx;
+            ball.y += ball.vy;
+          });
           
-          if (game.ball.y - game.ball.size <= 0 || game.ball.y + game.ball.size >= game.canvasHeight) {
-            game.ball.vy *= -1;
-            playSound('wall');
+          // Wall collision for all balls
+          game.balls.forEach(ball => {
+            if (ball.y - ball.size <= 0 || ball.y + ball.size >= game.canvasHeight) {
+              ball.vy *= -1;
+              playSound('wall');
+            }
+          });
+          
+          // Ball-to-ball collision (only in split mode)
+          if (gameMode === 'split') {
+            for (let i = 0; i < game.balls.length; i++) {
+              for (let j = i + 1; j < game.balls.length; j++) {
+                const b1 = game.balls[i];
+                const b2 = game.balls[j];
+                const dx = b2.x - b1.x;
+                const dy = b2.y - b1.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const minDist = b1.size + b2.size;
+                
+                if (distance < minDist) {
+                  // Simple elastic collision
+                  const angle = Math.atan2(dy, dx);
+                  const sin = Math.sin(angle);
+                  const cos = Math.cos(angle);
+                  
+                  // Separate balls
+                  const overlap = minDist - distance;
+                  b1.x -= overlap * cos * 0.5;
+                  b1.y -= overlap * sin * 0.5;
+                  b2.x += overlap * cos * 0.5;
+                  b2.y += overlap * sin * 0.5;
+                  
+                  // Swap velocities (simplified)
+                  const tempVx = b1.vx;
+                  const tempVy = b1.vy;
+                  b1.vx = b2.vx;
+                  b1.vy = b2.vy;
+                  b2.vx = tempVx;
+                  b2.vy = tempVy;
+                }
+              }
+            }
           }
           
-          if (game.ball.x - game.ball.size <= game.paddles.left.x + game.paddles.left.width &&
-              game.ball.y >= game.paddles.left.y &&
-              game.ball.y <= game.paddles.left.y + game.paddles.left.height &&
-              game.ball.vx < 0) {
-            game.ball.vx *= -1.1;
-            game.ball.vy += (Math.random() - 0.5) * 2;
-            playSound('paddle');
-          }
+          // Paddle collision for all balls
+          game.balls.forEach(ball => {
+            // Left paddle
+            if (ball.x - ball.size <= game.paddles.left.x + game.paddles.left.width &&
+                ball.y >= game.paddles.left.y &&
+                ball.y <= game.paddles.left.y + game.paddles.left.height &&
+                ball.vx < 0) {
+              ball.vx *= -1.1;
+              ball.vy += (Math.random() - 0.5) * 2;
+              playSound('paddle');
+              
+              // Spawn new ball if main ball, split mode, after warmup, and under limit
+              if (gameMode === 'split' && ball.isMain && game.hitCount >= 2 && game.balls.length < 99) {
+                const colors = ['#ff4444', '#44ff44', '#4444ff', '#ffff44', '#ff44ff', '#44ffff'];
+                game.balls.push({
+                  x: ball.x,
+                  y: ball.y,
+                  vx: (Math.random() - 0.5) * 8,
+                  vy: (Math.random() - 0.5) * 8,
+                  size: 12,
+                  isMain: false,
+                  color: colors[Math.floor(Math.random() * colors.length)]
+                });
+              }
+              game.hitCount++;
+            }
+            
+            // Right paddle
+            if (ball.x + ball.size >= game.paddles.right.x &&
+                ball.y >= game.paddles.right.y &&
+                ball.y <= game.paddles.right.y + game.paddles.right.height &&
+                ball.vx > 0) {
+              ball.vx *= -1.1;
+              ball.vy += (Math.random() - 0.5) * 2;
+              playSound('paddle');
+              
+              // Spawn new ball if main ball, split mode, after warmup, and under limit
+              if (gameMode === 'split' && ball.isMain && game.hitCount >= 2 && game.balls.length < 99) {
+                const colors = ['#ff4444', '#44ff44', '#4444ff', '#ffff44', '#ff44ff', '#44ffff'];
+                game.balls.push({
+                  x: ball.x,
+                  y: ball.y,
+                  vx: (Math.random() - 0.5) * 8,
+                  vy: (Math.random() - 0.5) * 8,
+                  size: 12,
+                  isMain: false,
+                  color: colors[Math.floor(Math.random() * colors.length)]
+                });
+              }
+              game.hitCount++;
+            }
+          });
           
-          if (game.ball.x + game.ball.size >= game.paddles.right.x &&
-              game.ball.y >= game.paddles.right.y &&
-              game.ball.y <= game.paddles.right.y + game.paddles.right.height &&
-              game.ball.vx > 0) {
-            game.ball.vx *= -1.1;
-            game.ball.vy += (Math.random() - 0.5) * 2;
-            playSound('paddle');
-          }
-          
-          if (game.ball.x < 0) {
+          // Score detection (only main ball)
+          const mainBall = game.balls.find(b => b.isMain);
+          if (mainBall && mainBall.x < 0) {
             setScores(prev => {
               const newScores = { ...prev, right: prev.right + 1 };
               if (newScores.right >= 11) {
@@ -199,7 +296,7 @@
               }
               return newScores;
             });
-          } else if (game.ball.x > game.canvasWidth) {
+          } else if (mainBall && mainBall.x > game.canvasWidth) {
             setScores(prev => {
               const newScores = { ...prev, left: prev.left + 1 };
               if (newScores.left >= 11) {
@@ -237,9 +334,12 @@
           }
           
           if (!blinkingPaddle || blinkVisible) {
-            ctx.beginPath();
-            ctx.arc(game.ball.x, game.ball.y, game.ball.size, 0, Math.PI * 2);
-            ctx.fill();
+            game.balls.forEach(ball => {
+              ctx.fillStyle = ball.color;
+              ctx.beginPath();
+              ctx.arc(ball.x, ball.y, ball.size, 0, Math.PI * 2);
+              ctx.fill();
+            });
           }
         };
         
@@ -307,19 +407,16 @@
           canvas.removeEventListener('touchmove', handleTouchMove);
           canvas.removeEventListener('touchend', handleTouchEnd);
         };
-      }, [gameState, blinkVisible, blinkingPaddle, soundEnabled]);
+      }, [gameState, blinkVisible, blinkingPaddle, soundEnabled, gameMode]);
       
       const resetGame = () => {
         setScores({ left: 0, right: 0 });
-        setCountdown(3);
-        setGameState('countdown');
+        setGameState('menu');
         setBlinkVisible(true);
         setBlinkingPaddle(null);
         const game = gameRef.current;
-        game.ball.x = 500;
-        game.ball.y = 300;
-        game.ball.vx = 5;
-        game.ball.vy = 3;
+        game.balls = [{ x: 500, y: 300, vx: 5, vy: 3, size: 12, isMain: true, color: '#fff' }];
+        game.hitCount = 0;
       };
 
       return (
@@ -337,6 +434,17 @@
               className="border-4 border-gray-700 touch-none w-full max-w-full"
               style={{ maxHeight: '70vh', display: 'block', margin: '0 auto' }}
             />
+            
+            {gameState === 'menu' && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-80">
+                <button
+                  onClick={startGame}
+                  className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded text-xl retro-font"
+                >
+                  New Game
+                </button>
+              </div>
+            )}
             
             {gameState === 'countdown' && (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -372,7 +480,13 @@
               >
                 SOUND: {soundEnabled ? 'ON' : 'OFF'}
               </button>
-              <span className="text-gray-600">v2.3</span>
+              <button 
+                onClick={toggleMode}
+                className="hover:text-gray-300 cursor-pointer"
+              >
+                MODE: {gameMode.toUpperCase()}
+              </button>
+              <span className="text-gray-600">v2.5</span>
             </div>
             <div>P2</div>
           </div>
@@ -383,5 +497,6 @@
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<PongGame />);
   </script>
+
 </body>
 </html>
