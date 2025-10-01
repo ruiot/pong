@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>iPad 2人プレイ Pong</title>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin: 0; overflow: hidden; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    function PongGame() {
+      const canvasRef = useRef(null);
+      const [gameState, setGameState] = useState('playing');
+      const [scores, setScores] = useState({ left: 0, right: 0 });
+      
+      const gameRef = useRef({
+        ball: { x: 400, y: 300, vx: 5, vy: 3, size: 15 },
+        paddles: {
+          left: { x: 30, y: 250, width: 20, height: 120 },
+          right: { x: 750, y: 250, width: 20, height: 120 }
+        },
+        touches: {},
+        canvasWidth: 800,
+        canvasHeight: 600
+      });
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const ctx = canvas.getContext('2d');
+        const game = gameRef.current;
+        
+        let animationId;
+        const gameLoop = () => {
+          if (gameState !== 'playing') return;
+          
+          game.ball.x += game.ball.vx;
+          game.ball.y += game.ball.vy;
+          
+          if (game.ball.y - game.ball.size <= 0 || game.ball.y + game.ball.size >= game.canvasHeight) {
+            game.ball.vy *= -1;
+          }
+          
+          if (game.ball.x - game.ball.size <= game.paddles.left.x + game.paddles.left.width &&
+              game.ball.y >= game.paddles.left.y &&
+              game.ball.y <= game.paddles.left.y + game.paddles.left.height &&
+              game.ball.vx < 0) {
+            game.ball.vx *= -1.1;
+            game.ball.vy += (Math.random() - 0.5) * 2;
+          }
+          
+          if (game.ball.x + game.ball.size >= game.paddles.right.x &&
+              game.ball.y >= game.paddles.right.y &&
+              game.ball.y <= game.paddles.right.y + game.paddles.right.height &&
+              game.ball.vx > 0) {
+            game.ball.vx *= -1.1;
+            game.ball.vy += (Math.random() - 0.5) * 2;
+          }
+          
+          if (game.ball.x < 0) {
+            setScores(prev => {
+              const newScores = { ...prev, right: prev.right + 1 };
+              if (newScores.right >= 11) {
+                setGameState('finished');
+              }
+              return newScores;
+            });
+            resetBall();
+          } else if (game.ball.x > game.canvasWidth) {
+            setScores(prev => {
+              const newScores = { ...prev, left: prev.left + 1 };
+              if (newScores.left >= 11) {
+                setGameState('finished');
+              }
+              return newScores;
+            });
+            resetBall();
+          }
+          
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, game.canvasWidth, game.canvasHeight);
+          
+          ctx.strokeStyle = '#444';
+          ctx.setLineDash([10, 10]);
+          ctx.beginPath();
+          ctx.moveTo(game.canvasWidth / 2, 0);
+          ctx.lineTo(game.canvasWidth / 2, game.canvasHeight);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(game.paddles.left.x, game.paddles.left.y, game.paddles.left.width, game.paddles.left.height);
+          ctx.fillRect(game.paddles.right.x, game.paddles.right.y, game.paddles.right.width, game.paddles.right.height);
+          
+          ctx.beginPath();
+          ctx.arc(game.ball.x, game.ball.y, game.ball.size, 0, Math.PI * 2);
+          ctx.fill();
+          
+          animationId = requestAnimationFrame(gameLoop);
+        };
+        
+        const resetBall = () => {
+          game.ball.x = game.canvasWidth / 2;
+          game.ball.y = game.canvasHeight / 2;
+          game.ball.vx = (Math.random() > 0.5 ? 1 : -1) * 5;
+          game.ball.vy = (Math.random() - 0.5) * 6;
+        };
+        
+        const handleTouchStart = (e) => {
+          e.preventDefault();
+          for (let touch of e.changedTouches) {
+            game.touches[touch.identifier] = {
+              x: touch.clientX,
+              y: touch.clientY,
+              startY: touch.clientY
+            };
+          }
+        };
+        
+        const handleTouchMove = (e) => {
+          e.preventDefault();
+          const rect = canvas.getBoundingClientRect();
+          
+          for (let touch of e.changedTouches) {
+            if (game.touches[touch.identifier]) {
+              const touchX = touch.clientX - rect.left;
+              const touchY = touch.clientY - rect.top;
+              
+              const scaleX = game.canvasWidth / rect.width;
+              const scaleY = game.canvasHeight / rect.height;
+              const scaledX = touchX * scaleX;
+              const scaledY = touchY * scaleY;
+              
+              if (scaledX < game.canvasWidth / 2) {
+                game.paddles.left.y = Math.max(0, Math.min(
+                  game.canvasHeight - game.paddles.left.height,
+                  scaledY - game.paddles.left.height / 2
+                ));
+              } else {
+                game.paddles.right.y = Math.max(0, Math.min(
+                  game.canvasHeight - game.paddles.right.height,
+                  scaledY - game.paddles.right.height / 2
+                ));
+              }
+              
+              game.touches[touch.identifier] = { x: touchX, y: touchY };
+            }
+          }
+        };
+        
+        const handleTouchEnd = (e) => {
+          e.preventDefault();
+          for (let touch of e.changedTouches) {
+            delete game.touches[touch.identifier];
+          }
+        };
+        
+        canvas.addEventListener('touchstart', handleTouchStart);
+        canvas.addEventListener('touchmove', handleTouchMove);
+        canvas.addEventListener('touchend', handleTouchEnd);
+        
+        if (gameState === 'playing') {
+          gameLoop();
+        }
+        
+        return () => {
+          cancelAnimationFrame(animationId);
+          canvas.removeEventListener('touchstart', handleTouchStart);
+          canvas.removeEventListener('touchmove', handleTouchMove);
+          canvas.removeEventListener('touchend', handleTouchEnd);
+        };
+      }, [gameState]);
+      
+      const resetGame = () => {
+        setScores({ left: 0, right: 0 });
+        setGameState('playing');
+        const game = gameRef.current;
+        game.ball.x = 400;
+        game.ball.y = 300;
+        game.ball.vx = 5;
+        game.ball.vy = 3;
+      };
+
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 p-2">
+          <div className="mb-2 flex gap-4 text-white text-2xl font-bold">
+            <div>P1: {scores.left}</div>
+            <div>P2: {scores.right}</div>
+          </div>
+          
+          <canvas
+            ref={canvasRef}
+            width={800}
+            height={600}
+            className="border-4 border-gray-700 touch-none w-full max-w-full"
+            style={{ maxHeight: '70vh' }}
+          />
+          
+          {gameState === 'finished' && (
+            <div className="mt-2 text-center">
+              <div className="text-white text-2xl mb-2">
+                {scores.left >= 11 ? 'Player 1' : 'Player 2'} Wins!
+              </div>
+              <button
+                onClick={resetGame}
+                className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded text-lg"
+              >
+                New Game
+              </button>
+            </div>
+          )}
+          
+          <div className="mt-2 text-gray-400 text-center text-sm px-2">
+            <p>画面左側タッチで左パドル / 右側で右パドル</p>
+            <p>11点先取で勝利！</p>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<PongGame />);
+  </script>
+</body>
+</html>
