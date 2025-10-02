@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <!-- Version: 2.8 - Wall boundaries fixed, layout adjusted for iPad -->
+  <!-- Version: 2.8 - Wall boundaries fixed, layout adjusted for iPad, white ball spawn effects, debug speed control -->
   <div id="root"></div>
 
   <script type="text/babel">
@@ -36,6 +36,8 @@
       const [soundEnabled, setSoundEnabled] = useState(true);
       const [gameMode, setGameMode] = useState('split');
       const [ballCount, setBallCount] = useState(1);
+      const [gameSpeed, setGameSpeed] = useState('normal');
+      const [slowMotion, setSlowMotion] = useState(false);
       
       const gameRef = useRef({
         balls: [{ x: 500, y: 300, vx: 5, vy: 3, size: 12, isMain: true, color: '#ffffff' }],
@@ -86,7 +88,7 @@
             oscillator.start();
             oscillator.stop(ctx.currentTime + 0.04);
             break;
-            case 'score':
+          case 'score':
             oscillator.frequency.value = 150;
             gainNode.gain.value = 0.15;
             oscillator.start();
@@ -109,6 +111,12 @@
             gainNode.gain.value = 0.12;
             oscillator.start();
             oscillator.stop(ctx.currentTime + 0.15);
+            break;
+          case 'spawn':
+            oscillator.frequency.value = 523;
+            gainNode.gain.value = 0.15;
+            oscillator.start();
+            oscillator.stop(ctx.currentTime + 0.1);
             break;
         }
       };
@@ -158,6 +166,10 @@
         setGameMode(prev => prev === 'standard' ? 'split' : 'standard');
       };
 
+      const toggleSpeed = () => {
+        setGameSpeed(prev => prev === 'normal' ? 'slow' : 'normal');
+      };
+
       const startGame = () => {
         initAudio();
         setCountdown(3);
@@ -178,6 +190,16 @@
           }
         }
       }, [countdown, gameState]);
+
+      // Slow motion effect
+      useEffect(() => {
+        if (slowMotion) {
+          const timer = setTimeout(() => {
+            setSlowMotion(false);
+          }, 500);
+          return () => clearTimeout(timer);
+        }
+      }, [slowMotion]);
 
       // Blink effect logic for score
       useEffect(() => {
@@ -235,10 +257,15 @@
             return;
           }
           
+          // Calculate speed multiplier
+          let speedMultiplier = 1.0;
+          if (gameSpeed === 'slow') speedMultiplier *= 0.5;
+          if (slowMotion) speedMultiplier *= 0.5;
+          
           // Move all balls
           game.balls.forEach(ball => {
-            ball.x += ball.vx;
-            ball.y += ball.vy;
+            ball.x += ball.vx * speedMultiplier;
+            ball.y += ball.vy * speedMultiplier;
           });
           
           // Wall collision for all balls
@@ -299,6 +326,11 @@
                     ballsToRemove.add(i);
                     ballsToRemove.add(j);
                     playSound('merge');
+                    // White ball promotion effect
+                    if (isNewMain) {
+                      playSound('spawn');
+                      setSlowMotion(true);
+                    }
                   } else {
                     // Bounce - elastic collision
                     const angle = Math.atan2(dy, dx);
@@ -538,7 +570,7 @@
           canvas.removeEventListener('touchmove', handleTouchMove);
           canvas.removeEventListener('touchend', handleTouchEnd);
         };
-      }, [gameState, blinkVisible, blinkingPaddle, soundEnabled, gameMode]);
+      }, [gameState, blinkVisible, blinkingPaddle, soundEnabled, gameMode, gameSpeed, slowMotion]);
       
       const resetGame = () => {
         setScores({ left: 0, right: 0 });
@@ -617,6 +649,12 @@
                 className="hover:text-gray-300 cursor-pointer"
               >
                 MODE: {gameMode.toUpperCase()}
+              </button>
+              <button 
+                onClick={toggleSpeed}
+                className="hover:text-gray-300 cursor-pointer"
+              >
+                SPEED: {gameSpeed.toUpperCase()}
               </button>
               <span className="text-gray-600">BALLS: {ballCount}</span>
               <span className="text-gray-600">v2.8</span>
