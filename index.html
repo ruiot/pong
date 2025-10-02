@@ -1,4 +1,9 @@
-<!DOCTYPE html>
+case 'ball':
+            oscillator.frequency.value = 250;
+            gainNode.gain.value = 0.06;
+            oscillator.start();
+            oscillator.stop(ctx.currentTime + 0.04);
+            break;<!DOCTYPE html>
 
 <html lang="ja">
 <head>
@@ -19,7 +24,7 @@
   </style>
 </head>
 <body>
-  <!-- Version: 2.6 - Default sound/split ON, ball collision sound, outer walls -->
+  <!-- Version: 2.7 - Color collision mechanics with merge/bounce/vanish -->
   <div id="root"></div>
 
   <script type="text/babel">
@@ -35,9 +40,10 @@
       const [blinkingPaddle, setBlinkingPaddle] = useState(null);
       const [soundEnabled, setSoundEnabled] = useState(true);
       const [gameMode, setGameMode] = useState('split');
+      const [ballCount, setBallCount] = useState(1);
       
       const gameRef = useRef({
-        balls: [{ x: 500, y: 300, vx: 5, vy: 3, size: 12, isMain: true, color: '#fff' }],
+        balls: [{ x: 500, y: 300, vx: 5, vy: 3, size: 12, isMain: true, color: '#ffffff' }],
         paddles: {
           left: { x: 50, y: 250, width: 20, height: 120 },
           right: { x: 930, y: 250, width: 20, height: 120 }
@@ -79,12 +85,6 @@
             oscillator.start();
             oscillator.stop(ctx.currentTime + 0.05);
             break;
-          case 'ball':
-            oscillator.frequency.value = 250;
-            gainNode.gain.value = 0.06;
-            oscillator.start();
-            oscillator.stop(ctx.currentTime + 0.04);
-            break;
           case 'score':
             oscillator.frequency.value = 150;
             gainNode.gain.value = 0.15;
@@ -97,6 +97,52 @@
             oscillator.start();
             oscillator.stop(ctx.currentTime + 0.1);
             break;
+          case 'merge':
+            oscillator.frequency.value = 330;
+            gainNode.gain.value = 0.1;
+            oscillator.start();
+            oscillator.stop(ctx.currentTime + 0.08);
+            break;
+          case 'vanish':
+            oscillator.frequency.value = 120;
+            gainNode.gain.value = 0.12;
+            oscillator.start();
+            oscillator.stop(ctx.currentTime + 0.15);
+            break;
+        }
+      };
+
+      // Color collision logic
+      const checkCollision = (color1, color2) => {
+        const parseColor = (hex) => ({
+          r: hex.slice(1, 3),
+          g: hex.slice(3, 5),
+          b: hex.slice(5, 7)
+        });
+        
+        const c1 = parseColor(color1);
+        const c2 = parseColor(color2);
+        
+        // Same color vanishes
+        if (color1 === color2) return { type: 'vanish' };
+        
+        // Check ff component overlap
+        const hasOverlap = 
+          (c1.r === 'ff' && c2.r === 'ff') ||
+          (c1.g === 'ff' && c2.g === 'ff') ||
+          (c1.b === 'ff' && c2.b === 'ff');
+        
+        if (hasOverlap) {
+          return { type: 'bounce' };
+        } else {
+          // OR operation for new color
+          const newR = (c1.r === 'ff' || c2.r === 'ff') ? 'ff' : '44';
+          const newG = (c1.g === 'ff' || c2.g === 'ff') ? 'ff' : '44';
+          const newB = (c1.b === 'ff' || c2.b === 'ff') ? 'ff' : '44';
+          return { 
+            type: 'merge', 
+            color: `#${newR}${newG}${newB}` 
+          };
         }
       };
 
@@ -157,9 +203,10 @@
                 vy: (Math.random() - 0.5) * 6, 
                 size: 12, 
                 isMain: true, 
-                color: '#fff' 
+                color: '#ffffff' 
               }];
               game.hitCount = 0;
+              setBallCount(1);
               
               setGameState('playing');
             }
@@ -211,8 +258,15 @@
           
           // Ball-to-ball collision (only in split mode)
           if (gameMode === 'split') {
+            const ballsToRemove = new Set();
+            const ballsToAdd = [];
+            
             for (let i = 0; i < game.balls.length; i++) {
+              if (ballsToRemove.has(i)) continue;
+              
               for (let j = i + 1; j < game.balls.length; j++) {
+                if (ballsToRemove.has(j)) continue;
+                
                 const b1 = game.balls[i];
                 const b2 = game.balls[j];
                 const dx = b2.x - b1.x;
@@ -221,31 +275,70 @@
                 const minDist = b1.size + b2.size;
                 
                 if (distance < minDist) {
-                  // Simple elastic collision
-                  const angle = Math.atan2(dy, dx);
-                  const sin = Math.sin(angle);
-                  const cos = Math.cos(angle);
+                  const collisionResult = checkCollision(b1.color, b2.color);
                   
-                  // Separate balls
-                  const overlap = minDist - distance;
-                  b1.x -= overlap * cos * 0.5;
-                  b1.y -= overlap * sin * 0.5;
-                  b2.x += overlap * cos * 0.5;
-                  b2.y += overlap * sin * 0.5;
+                  if (collisionResult.type === 'vanish') {
+                    // Mark both balls for removal
+                    ballsToRemove.add(i);
+                    ballsToRemove.add(j);
+                    playSound('vanish');
+                  } else if (collisionResult.type === 'merge') {
+                    // Create merged ball
+                    const isNewMain = collisionResult.color === '#ffffff';
+                    ballsToAdd.push({
+                      x: (b1.x + b2.x) / 2,
+                      y: (b1.y + b2.y) / 2,
+                      vx: b1.vx + b2.vx,
+                      vy: b1.vy + b2.vy,
+                      size: 12,
+                      isMain: isNewMain || b1.isMain || b2.isMain,
+                      color: collisionResult.color
+                    });
+                    ballsToRemove.add(i);
+                    ballsToRemove.add(j);
+                    playSound('merge');
+                  } else {
+                    // Bounce - elastic collision
+                    const angle = Math.atan2(dy, dx);
+                    const sin = Math.sin(angle);
+                    const cos = Math.cos(angle);
+                    
+                    // Separate balls
+                    const overlap = minDist - distance;
+                    b1.x -= overlap * cos * 0.5;
+                    b1.y -= overlap * sin * 0.5;
+                    b2.x += overlap * cos * 0.5;
+                    b2.y += overlap * sin * 0.5;
+                    
+                    // Swap velocities
+                    const tempVx = b1.vx;
+                    const tempVy = b1.vy;
+                    b1.vx = b2.vx;
+                    b1.vy = b2.vy;
+                    b2.vx = tempVx;
+                    b2.vy = tempVy;
+                    
+                    playSound('ball');
+                  }
                   
-                  // Swap velocities (simplified)
-                  const tempVx = b1.vx;
-                  const tempVy = b1.vy;
-                  b1.vx = b2.vx;
-                  b1.vy = b2.vy;
-                  b2.vx = tempVx;
-                  b2.vy = tempVy;
-                  
-                  playSound('ball');
+                  break;
                 }
               }
             }
+            
+            // Remove marked balls
+            if (ballsToRemove.size > 0) {
+              game.balls = game.balls.filter((_, idx) => !ballsToRemove.has(idx));
+            }
+            
+            // Add new merged balls
+            if (ballsToAdd.length > 0) {
+              game.balls.push(...ballsToAdd);
+            }
           }
+          
+          // Update ball count
+          setBallCount(game.balls.length);
           
           // Paddle collision for all balls
           game.balls.forEach(ball => {
@@ -300,30 +393,49 @@
             }
           });
           
-          // Score detection (only main ball)
-          const mainBall = game.balls.find(b => b.isMain);
-          if (mainBall && mainBall.x < 0) {
-            setScores(prev => {
-              const newScores = { ...prev, right: prev.right + 1 };
-              if (newScores.right >= 11) {
-                setGameState('finished');
-              } else {
-                setBlinkingPaddle('left');
-                setGameState('paused');
-              }
-              return newScores;
-            });
-          } else if (mainBall && mainBall.x > game.canvasWidth) {
-            setScores(prev => {
-              const newScores = { ...prev, left: prev.left + 1 };
-              if (newScores.left >= 11) {
-                setGameState('finished');
-              } else {
-                setBlinkingPaddle('right');
-                setGameState('paused');
-              }
-              return newScores;
-            });
+          // Check if all main balls are gone
+          const mainBalls = game.balls.filter(b => b.isMain);
+          if (mainBalls.length === 0 && game.balls.length > 0) {
+            // Reset immediately without score change
+            game.balls = [{ 
+              x: game.canvasWidth / 2, 
+              y: game.canvasHeight / 2, 
+              vx: (Math.random() > 0.5 ? 1 : -1) * 5, 
+              vy: (Math.random() - 0.5) * 6, 
+              size: 12, 
+              isMain: true, 
+              color: '#ffffff' 
+            }];
+            game.hitCount = 0;
+            setBallCount(1);
+          }
+          
+          // Score detection (only main balls)
+          const scoringBall = mainBalls.find(b => b.x < 0 || b.x > game.canvasWidth);
+          if (scoringBall) {
+            if (scoringBall.x < 0) {
+              setScores(prev => {
+                const newScores = { ...prev, right: prev.right + 1 };
+                if (newScores.right >= 11) {
+                  setGameState('finished');
+                } else {
+                  setBlinkingPaddle('left');
+                  setGameState('paused');
+                }
+                return newScores;
+              });
+            } else {
+              setScores(prev => {
+                const newScores = { ...prev, left: prev.left + 1 };
+                if (newScores.left >= 11) {
+                  setGameState('finished');
+                } else {
+                  setBlinkingPaddle('right');
+                  setGameState('paused');
+                }
+                return newScores;
+              });
+            }
           }
           
           draw();
@@ -432,8 +544,9 @@
         setBlinkVisible(true);
         setBlinkingPaddle(null);
         const game = gameRef.current;
-        game.balls = [{ x: 500, y: 300, vx: 5, vy: 3, size: 12, isMain: true, color: '#fff' }];
+        game.balls = [{ x: 500, y: 300, vx: 5, vy: 3, size: 12, isMain: true, color: '#ffffff' }];
         game.hitCount = 0;
+        setBallCount(1);
       };
 
       return (
@@ -503,7 +616,8 @@
               >
                 MODE: {gameMode.toUpperCase()}
               </button>
-              <span className="text-gray-600">v2.6</span>
+              <span className="text-gray-600">BALLS: {ballCount}</span>
+              <span className="text-gray-600">v2.7</span>
             </div>
             <div>P2</div>
           </div>
