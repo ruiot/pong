@@ -1,9 +1,4 @@
-case 'ball':
-            oscillator.frequency.value = 250;
-            gainNode.gain.value = 0.06;
-            oscillator.start();
-            oscillator.stop(ctx.currentTime + 0.04);
-            break;<!DOCTYPE html>
+<!DOCTYPE html>
 
 <html lang="ja">
 <head>
@@ -85,7 +80,13 @@ case 'ball':
             oscillator.start();
             oscillator.stop(ctx.currentTime + 0.05);
             break;
-          case 'score':
+          case 'ball':
+            oscillator.frequency.value = 250;
+            gainNode.gain.value = 0.06;
+            oscillator.start();
+            oscillator.stop(ctx.currentTime + 0.04);
+            break;
+            case 'score':
             oscillator.frequency.value = 150;
             gainNode.gain.value = 0.15;
             oscillator.start();
