@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <!-- Version: 2.7 - Color collision mechanics with merge/bounce/vanish -->
+  <!-- Version: 2.8 - Wall boundaries fixed, layout adjusted for iPad -->
   <div id="root"></div>
 
   <script type="text/babel">
@@ -242,7 +242,6 @@
           });
           
           // Wall collision for all balls
-          const OUTER_WALL_OFFSET = 500;
           game.balls.forEach(ball => {
             // Top/bottom walls
             if (ball.y - ball.size <= 0 || ball.y + ball.size >= game.canvasHeight) {
@@ -250,10 +249,12 @@
               playSound('wall');
             }
             
-            // Left/right outer walls (invisible, no sound)
-            if (ball.x - ball.size <= -OUTER_WALL_OFFSET || 
-                ball.x + ball.size >= game.canvasWidth + OUTER_WALL_OFFSET) {
-              ball.vx *= -1;
+            // Left/right walls (only for non-main balls)
+            if (!ball.isMain) {
+              if (ball.x - ball.size <= 0 || ball.x + ball.size >= game.canvasWidth) {
+                ball.vx *= -1;
+                playSound('wall');
+              }
             }
           });
           
@@ -551,8 +552,8 @@
       };
 
       return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 p-2">
-          <div className="mb-4 flex justify-between items-center w-full max-w-4xl px-8">
+        <div className="flex flex-col items-center justify-start min-h-screen bg-gray-900 p-2 pt-4">
+          <div className="mb-3 flex justify-between items-center w-full max-w-4xl px-8">
             <div className="text-white text-5xl font-bold retro-font">{scores.left}</div>
             <div className="text-white text-5xl font-bold retro-font">{scores.right}</div>
           </div>
@@ -602,7 +603,7 @@
             )}
           </div>
           
-          <div className="mt-2 flex justify-between items-center w-full max-w-4xl px-8 text-gray-400 text-xs retro-font">
+          <div className="mt-1 mb-8 flex justify-between items-center w-full max-w-4xl px-8 text-gray-400 text-xs retro-font">
             <div>P1</div>
             <div className="flex gap-4 items-center">
               <button 
@@ -618,7 +619,7 @@
                 MODE: {gameMode.toUpperCase()}
               </button>
               <span className="text-gray-600">BALLS: {ballCount}</span>
-              <span className="text-gray-600">v2.7</span>
+              <span className="text-gray-600">v2.8</span>
             </div>
             <div>P2</div>
           </div>
