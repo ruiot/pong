@@ -1,11 +1,10 @@
 <!DOCTYPE html>
-
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>Pong v3.1</title>
+  <title>Pong v3.2</title>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -19,9 +18,8 @@
   </style>
 </head>
 <body>
-  <!-- Version: 3.1 - Elastic collision, paddle control, 4:3 aspect ratio -->
+  <!-- Version: 3.2 - Blinking white ball mode, bug fixes -->
   <div id="root"></div>
-
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
@@ -33,17 +31,17 @@
       const [countdown, setCountdown] = useState(3);
       const [blinkVisible, setBlinkVisible] = useState(true);
       const [blinkingPaddle, setBlinkingPaddle] = useState(null);
+      const [invincibleBlink, setInvincibleBlink] = useState(true);
       const [soundEnabled, setSoundEnabled] = useState(true);
       const [gameMode, setGameMode] = useState('split');
       const [ballCount, setBallCount] = useState(1);
       const [gameSpeed, setGameSpeed] = useState('normal');
       
-      // 4:3 aspect ratio
       const CANVAS_WIDTH = 800;
       const CANVAS_HEIGHT = 600;
       
       const gameRef = useRef({
-        balls: [{ x: 400, y: 300, vx: 5, vy: 3, size: 12, isMain: true, color: '#ffffff' }],
+        balls: [{ x: 400, y: 300, vx: 5, vy: 3, size: 12, isMain: true, color: '#ffffff', blinking: false, blinkColors: null }],
         paddles: {
           left: { x: 50, y: 250, width: 20, height: 120, prevY: 250, velocityY: 0 },
           right: { x: 730, y: 250, width: 20, height: 120, prevY: 250, velocityY: 0 }
@@ -64,211 +62,80 @@
 
       const playSound = (type) => {
         if (!soundEnabled || !audioContextRef.current) return;
-        
         const ctx = audioContextRef.current;
         const oscillator = ctx.createOscillator();
         const gainNode = ctx.createGain();
-        
         oscillator.connect(gainNode);
         gainNode.connect(ctx.destination);
         
         switch(type) {
-          case 'paddle':
-            oscillator.frequency.value = 220;
-            gainNode.gain.value = 0.1;
-            oscillator.start();
-            oscillator.stop(ctx.currentTime + 0.05);
-            break;
-          case 'paddle_white':
-            oscillator.frequency.value = 350;
-            gainNode.gain.value = 0.12;
-            oscillator.start();
-            oscillator.stop(ctx.currentTime + 0.05);
-            break;
-          case 'wall':
-            oscillator.frequency.value = 180;
-            gainNode.gain.value = 0.08;
-            oscillator.start();
-            oscillator.stop(ctx.currentTime + 0.05);
-            break;
-          case 'ball':
-            oscillator.frequency.value = 250;
-            gainNode.gain.value = 0.06;
-            oscillator.start();
-            oscillator.stop(ctx.currentTime + 0.04);
-            break;
-          case 'ball_white':
-            oscillator.frequency.value = 400;
-            gainNode.gain.value = 0.08;
-            oscillator.start();
-            oscillator.stop(ctx.currentTime + 0.04);
-            break;
-          case 'score':
-            oscillator.frequency.value = 150;
-            gainNode.gain.value = 0.15;
-            oscillator.start();
-            oscillator.stop(ctx.currentTime + 0.2);
-            break;
-          case 'go':
-            oscillator.frequency.value = 440;
-            gainNode.gain.value = 0.12;
-            oscillator.start();
-            oscillator.stop(ctx.currentTime + 0.1);
-            break;
-          case 'merge':
-            oscillator.frequency.value = 280;
-            gainNode.gain.value = 0.1;
-            oscillator.start();
-            oscillator.stop(ctx.currentTime + 0.08);
-            break;
-          case 'spawn_white':
-            oscillator.frequency.value = 523;
-            gainNode.gain.value = 0.15;
-            oscillator.start();
-            oscillator.stop(ctx.currentTime + 0.1);
-            break;
-          case 'spawn_grey':
-            oscillator.frequency.value = 100;
-            gainNode.gain.value = 0.15;
-            oscillator.start();
-            oscillator.stop(ctx.currentTime + 0.15);
-            break;
+          case 'paddle': oscillator.frequency.value = 220; gainNode.gain.value = 0.1; break;
+          case 'paddle_white': oscillator.frequency.value = 350; gainNode.gain.value = 0.12; break;
+          case 'wall': oscillator.frequency.value = 180; gainNode.gain.value = 0.08; break;
+          case 'ball': oscillator.frequency.value = 250; gainNode.gain.value = 0.06; break;
+          case 'ball_white': oscillator.frequency.value = 400; gainNode.gain.value = 0.08; break;
+          case 'score': oscillator.frequency.value = 150; gainNode.gain.value = 0.15; break;
+          case 'go': oscillator.frequency.value = 440; gainNode.gain.value = 0.12; break;
+          case 'merge': oscillator.frequency.value = 280; gainNode.gain.value = 0.1; break;
+          case 'spawn_white': oscillator.frequency.value = 523; gainNode.gain.value = 0.15; break;
+          case 'spawn_grey': oscillator.frequency.value = 100; gainNode.gain.value = 0.15; break;
         }
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + (type === 'score' ? 0.2 : type === 'spawn_grey' ? 0.15 : type === 'go' || type === 'spawn_white' ? 0.1 : type === 'merge' ? 0.08 : 0.05));
       };
 
       const checkCollision = (color1, color2) => {
+        if (color1 === '#ffffff' && color2 === '#ffffff') return { type: 'complement', color: '#888888' };
+        if (color1 === '#888888' && color2 === '#888888') return { type: 'complement', color: '#ffffff' };
         if (color1 === color2) {
-          const complement = {
-            '#ff4444': '#44ffff',
-            '#44ff44': '#ff44ff',
-            '#4444ff': '#ffff44',
-            '#ffff44': '#4444ff',
-            '#ff44ff': '#44ff44',
-            '#44ffff': '#ff4444',
-            '#ffffff': '#888888',
-            '#888888': '#ffffff'
-          };
+          const complement = { '#ff4444': '#44ffff', '#44ff44': '#ff44ff', '#4444ff': '#ffff44', '#ffff44': '#4444ff', '#ff44ff': '#44ff44', '#44ffff': '#ff4444' };
           return { type: 'complement', color: complement[color1] };
         }
-
-        const parseColor = (hex) => ({
-          r: hex.slice(1, 3),
-          g: hex.slice(3, 5),
-          b: hex.slice(5, 7)
-        });
-        
-        const c1 = parseColor(color1);
-        const c2 = parseColor(color2);
-        
-        const hasOverlap = 
-          (c1.r === 'ff' && c2.r === 'ff') ||
-          (c1.g === 'ff' && c2.g === 'ff') ||
-          (c1.b === 'ff' && c2.b === 'ff');
-        
-        if (color1 === '#888888' || color2 === '#888888') {
-          return { type: 'bounce' };
-        }
-        
-        if (hasOverlap) {
-          return { type: 'bounce' };
-        } else {
-          const newR = (c1.r === 'ff' || c2.r === 'ff') ? 'ff' : '44';
-          const newG = (c1.g === 'ff' || c2.g === 'ff') ? 'ff' : '44';
-          const newB = (c1.b === 'ff' || c2.b === 'ff') ? 'ff' : '44';
-          return { 
-            type: 'merge', 
-            color: `#${newR}${newG}${newB}` 
-          };
-        }
+        const parseColor = (hex) => ({ r: hex.slice(1, 3), g: hex.slice(3, 5), b: hex.slice(5, 7) });
+        const c1 = parseColor(color1), c2 = parseColor(color2);
+        const hasOverlap = (c1.r === 'ff' && c2.r === 'ff') || (c1.g === 'ff' && c2.g === 'ff') || (c1.b === 'ff' && c2.b === 'ff');
+        if (color1 === '#888888' || color2 === '#888888') return { type: 'bounce' };
+        if (hasOverlap) return { type: 'bounce' };
+        const newR = (c1.r === 'ff' || c2.r === 'ff') ? 'ff' : '44';
+        const newG = (c1.g === 'ff' || c2.g === 'ff') ? 'ff' : '44';
+        const newB = (c1.b === 'ff' || c2.b === 'ff') ? 'ff' : '44';
+        return { type: 'merge', color: `#${newR}${newG}${newB}` };
       };
 
       const elasticCollision = (b1, b2) => {
-        const dx = b2.x - b1.x;
-        const dy = b2.y - b1.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
+        const dx = b2.x - b1.x, dy = b2.y - b1.y, distance = Math.sqrt(dx * dx + dy * dy);
         if (distance === 0) return;
-        
-        // 正規化（単位ベクトル）
-        const nx = dx / distance;
-        const ny = dy / distance;
-        
-        // 速度を衝突軸方向と垂直方向に分解
-        const v1n = b1.vx * nx + b1.vy * ny;
-        const v2n = b2.vx * nx + b2.vy * ny;
-        const v1t = -b1.vx * ny + b1.vy * nx;
-        const v2t = -b2.vx * ny + b2.vy * nx;
-        
-        // 衝突軸方向の速度を交換（質量が同じ場合）
-        const v1n_after = v2n;
-        const v2n_after = v1n;
-        
-        // 垂直方向は変わらない
-        const v1t_after = v1t;
-        const v2t_after = v2t;
-        
-        // 元の座標系に戻す
-        b1.vx = v1n_after * nx - v1t_after * ny;
-        b1.vy = v1n_after * ny + v1t_after * nx;
-        b2.vx = v2n_after * nx - v2t_after * ny;
-        b2.vy = v2n_after * ny + v2t_after * nx;
-        
-        // 速度上限を適用
+        const nx = dx / distance, ny = dy / distance;
+        const v1n = b1.vx * nx + b1.vy * ny, v2n = b2.vx * nx + b2.vy * ny;
+        const v1t = -b1.vx * ny + b1.vy * nx, v2t = -b2.vx * ny + b2.vy * nx;
+        b1.vx = v2n * nx - v1t * ny; b1.vy = v2n * ny + v1t * nx;
+        b2.vx = v1n * nx - v2t * ny; b2.vy = v1n * ny + v2t * nx;
         const game = gameRef.current;
-        const speed1 = Math.sqrt(b1.vx * b1.vx + b1.vy * b1.vy);
-        const speed2 = Math.sqrt(b2.vx * b2.vx + b2.vy * b2.vy);
-        
-        if (speed1 > game.maxSpeed) {
-          const ratio = game.maxSpeed / speed1;
-          b1.vx *= ratio;
-          b1.vy *= ratio;
-        }
-        if (speed2 > game.maxSpeed) {
-          const ratio = game.maxSpeed / speed2;
-          b2.vx *= ratio;
-          b2.vy *= ratio;
-        }
-        
-        // 重なりを解消
+        [b1, b2].forEach(b => {
+          const speed = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+          if (speed > game.maxSpeed) { const ratio = game.maxSpeed / speed; b.vx *= ratio; b.vy *= ratio; }
+        });
         const overlap = (b1.size + b2.size) - distance;
-        b1.x -= overlap * nx * 0.5;
-        b1.y -= overlap * ny * 0.5;
-        b2.x += overlap * nx * 0.5;
-        b2.y += overlap * ny * 0.5;
+        b1.x -= overlap * nx * 0.5; b1.y -= overlap * ny * 0.5;
+        b2.x += overlap * nx * 0.5; b2.y += overlap * ny * 0.5;
       };
 
-      const toggleSound = () => {
-        if (!soundEnabled) {
-          initAudio();
-        }
-        setSoundEnabled(!soundEnabled);
-      };
+      const toggleSound = () => { if (!soundEnabled) initAudio(); setSoundEnabled(!soundEnabled); };
+      const toggleMode = () => setGameMode(prev => prev === 'standard' ? 'split' : 'standard');
+      const toggleSpeed = () => setGameSpeed(prev => prev === 'normal' ? 'slow' : 'normal');
+      const startGame = () => { initAudio(); setCountdown(3); setGameState('countdown'); };
 
-      const toggleMode = () => {
-        setGameMode(prev => prev === 'standard' ? 'split' : 'standard');
-      };
-
-      const toggleSpeed = () => {
-        setGameSpeed(prev => prev === 'normal' ? 'slow' : 'normal');
-      };
-
-      const startGame = () => {
-        initAudio();
-        setCountdown(3);
-        setGameState('countdown');
-      };
+      useEffect(() => {
+        const interval = setInterval(() => setInvincibleBlink(prev => !prev), 200);
+        return () => clearInterval(interval);
+      }, []);
 
       useEffect(() => {
         if (gameState === 'countdown') {
           if (countdown > 0) {
-            const timer = setTimeout(() => {
-              setCountdown(countdown - 1);
-            }, 1000);
+            const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
             return () => clearTimeout(timer);
-          } else {
-            playSound('go');
-            setGameState('playing');
-          }
+          } else { playSound('go'); setGameState('playing'); }
         }
       }, [countdown, gameState]);
 
@@ -277,33 +144,20 @@
           let count = 0;
           setBlinkVisible(false);
           playSound('score');
-          
           const interval = setInterval(() => {
             count++;
             setBlinkVisible(prev => !prev);
-            
             if (count >= 6) {
               clearInterval(interval);
               setBlinkVisible(true);
               setBlinkingPaddle(null);
-              
               const game = gameRef.current;
-              game.balls = [{ 
-                x: game.canvasWidth / 2, 
-                y: game.canvasHeight / 2, 
-                vx: (Math.random() > 0.5 ? 1 : -1) * 5, 
-                vy: (Math.random() - 0.5) * 6, 
-                size: 12, 
-                isMain: true, 
-                color: '#ffffff' 
-              }];
+              game.balls = [{ x: game.canvasWidth / 2, y: game.canvasHeight / 2, vx: (Math.random() > 0.5 ? 1 : -1) * 5, vy: (Math.random() - 0.5) * 6, size: 12, isMain: true, color: '#ffffff', blinking: false, blinkColors: null }];
               game.hitCount = 0;
               setBallCount(1);
-              
               setGameState('playing');
             }
           }, 150);
-          
           return () => clearInterval(interval);
         }
       }, [gameState, blinkingPaddle]);
@@ -311,428 +165,185 @@
       useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
-        
-        const ctx = canvas.getContext('2d');
-        const game = gameRef.current;
-        
+        const ctx = canvas.getContext('2d'), game = gameRef.current;
         let animationId;
+        
         const gameLoop = (currentTime) => {
           if (gameState !== 'playing') {
             draw();
-            if (gameState === 'paused') {
-              animationId = requestAnimationFrame(gameLoop);
-            }
+            if (gameState === 'paused') animationId = requestAnimationFrame(gameLoop);
             return;
           }
-          
           const deltaTime = game.lastTime ? (currentTime - game.lastTime) / 16.67 : 1;
           game.lastTime = currentTime;
-          
-          let speedMultiplier = gameSpeed === 'slow' ? 0.5 : 1.0;
-          
-          // パドル速度を計算
+          const speedMultiplier = gameSpeed === 'slow' ? 0.5 : 1.0;
           game.paddles.left.velocityY = (game.paddles.left.y - game.paddles.left.prevY) / Math.max(deltaTime, 0.1);
           game.paddles.right.velocityY = (game.paddles.right.y - game.paddles.right.prevY) / Math.max(deltaTime, 0.1);
-          
+          game.balls.forEach(ball => { ball.x += ball.vx * speedMultiplier; ball.y += ball.vy * speedMultiplier; });
           game.balls.forEach(ball => {
-            ball.x += ball.vx * speedMultiplier;
-            ball.y += ball.vy * speedMultiplier;
-          });
-          
-          game.balls.forEach(ball => {
-            if (ball.y - ball.size <= 0 || ball.y + ball.size >= game.canvasHeight) {
-              ball.vy *= -1;
-              playSound('wall');
-            }
-            
-            if (!ball.isMain) {
-              if (ball.x - ball.size <= 0 || ball.x + ball.size >= game.canvasWidth) {
-                ball.vx *= -1;
-                playSound('wall');
-              }
-            }
+            if (ball.y - ball.size <= 0 || ball.y + ball.size >= game.canvasHeight) { ball.vy *= -1; playSound('wall'); }
+            if (!ball.isMain && (ball.x - ball.size <= 0 || ball.x + ball.size >= game.canvasWidth)) { ball.vx *= -1; playSound('wall'); }
           });
           
           if (gameMode === 'split') {
-            const ballsToRemove = new Set();
-            const ballsToAdd = [];
-            
+            const ballsToRemove = new Set(), ballsToAdd = [];
             for (let i = 0; i < game.balls.length; i++) {
               if (ballsToRemove.has(i)) continue;
-              
               for (let j = i + 1; j < game.balls.length; j++) {
                 if (ballsToRemove.has(j)) continue;
-                
-                const b1 = game.balls[i];
-                const b2 = game.balls[j];
-                const dx = b2.x - b1.x;
-                const dy = b2.y - b1.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                const minDist = b1.size + b2.size;
-                
-                if (distance < minDist) {
+                const b1 = game.balls[i], b2 = game.balls[j];
+                const dx = b2.x - b1.x, dy = b2.y - b1.y, distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < b1.size + b2.size) {
                   const collisionResult = checkCollision(b1.color, b2.color);
-                  
                   if (collisionResult.type === 'complement') {
-                    const isNewMain = collisionResult.color === '#ffffff';
-                    const isGrey = collisionResult.color === '#888888';
-                    
-                    ballsToAdd.push({
-                      x: (b1.x + b2.x) / 2,
-                      y: (b1.y + b2.y) / 2,
-                      vx: b1.vx + b2.vx,
-                      vy: b1.vy + b2.vy,
-                      size: 12,
-                      isMain: isNewMain,
-                      color: collisionResult.color
-                    });
-                    ballsToRemove.add(i);
-                    ballsToRemove.add(j);
+                    const isNewMain = collisionResult.color === '#ffffff', isGrey = collisionResult.color === '#888888';
+                    ballsToAdd.push({ x: (b1.x + b2.x) / 2, y: (b1.y + b2.y) / 2, vx: b1.vx + b2.vx, vy: b1.vy + b2.vy, size: 12, isMain: false, color: collisionResult.color, blinking: isNewMain, blinkColors: isNewMain ? [b1.color, b2.color] : null });
+                    ballsToRemove.add(i); ballsToRemove.add(j);
                     playSound('merge');
-                    
-                    if (isNewMain) {
-                      playSound('spawn_white');
-                    } else if (isGrey) {
-                      playSound('spawn_grey');
-                    }
+                    if (isNewMain) playSound('spawn_white'); else if (isGrey) playSound('spawn_grey');
                   } else if (collisionResult.type === 'merge') {
                     const isNewMain = collisionResult.color === '#ffffff';
-                    ballsToAdd.push({
-                      x: (b1.x + b2.x) / 2,
-                      y: (b1.y + b2.y) / 2,
-                      vx: b1.vx + b2.vx,
-                      vy: b1.vy + b2.vy,
-                      size: 12,
-                      isMain: isNewMain || b1.isMain || b2.isMain,
-                      color: collisionResult.color
-                    });
-                    ballsToRemove.add(i);
-                    ballsToRemove.add(j);
+                    ballsToAdd.push({ x: (b1.x + b2.x) / 2, y: (b1.y + b2.y) / 2, vx: b1.vx + b2.vx, vy: b1.vy + b2.vy, size: 12, isMain: isNewMain || b1.isMain || b2.isMain, color: collisionResult.color, blinking: false, blinkColors: null });
+                    ballsToRemove.add(i); ballsToRemove.add(j);
                     playSound('merge');
-                    
-                    if (isNewMain) {
-                      playSound('spawn_white');
-                    }
-                  } else {
-                    // 弾性衝突
-                    elasticCollision(b1, b2);
-                    
-                    if (b1.color === '#ffffff' || b2.color === '#ffffff') {
-                      playSound('ball_white');
-                    } else {
-                      playSound('ball');
-                    }
-                  }
-                  
+                    if (isNewMain) playSound('spawn_white');
+                  } else { elasticCollision(b1, b2); playSound(b1.color === '#ffffff' || b2.color === '#ffffff' ? 'ball_white' : 'ball'); }
                   break;
                 }
               }
             }
-            
-            if (ballsToRemove.size > 0) {
-              game.balls = game.balls.filter((_, idx) => !ballsToRemove.has(idx));
-            }
-            
-            if (ballsToAdd.length > 0) {
-              game.balls.push(...ballsToAdd);
-            }
+            if (ballsToRemove.size > 0) game.balls = game.balls.filter((_, idx) => !ballsToRemove.has(idx));
+            if (ballsToAdd.length > 0) game.balls.push(...ballsToAdd);
           }
           
           setBallCount(game.balls.length);
           
           game.balls.forEach(ball => {
-            if (ball.color === '#888888') {
-              if (ball.x - ball.size <= game.paddles.left.x + game.paddles.left.width &&
-                  ball.y >= game.paddles.left.y &&
-                  ball.y <= game.paddles.left.y + game.paddles.left.height &&
-                  ball.vx < 0) {
-                setScores(prev => {
-                  const newScores = { ...prev, right: prev.right + 1 };
-                  if (newScores.right >= 11) {
-                    setGameState('finished');
-                  } else {
-                    setBlinkingPaddle('left');
-                    setGameState('paused');
-                  }
-                  return newScores;
-                });
-                return;
-              }
+            const handlePaddleHit = (paddle, side) => {
+              const isLeft = side === 'left';
+              const paddleEdge = isLeft ? paddle.x + paddle.width : paddle.x;
+              const ballEdge = isLeft ? ball.x - ball.size : ball.x + ball.size;
+              const correctDirection = isLeft ? ball.vx < 0 : ball.vx > 0;
               
-              if (ball.x + ball.size >= game.paddles.right.x &&
-                  ball.y >= game.paddles.right.y &&
-                  ball.y <= game.paddles.right.y + game.paddles.right.height &&
-                  ball.vx > 0) {
-                setScores(prev => {
-                  const newScores = { ...prev, left: prev.left + 1 };
-                  if (newScores.left >= 11) {
-                    setGameState('finished');
-                  } else {
-                    setBlinkingPaddle('right');
-                    setGameState('paused');
-                  }
-                  return newScores;
-                });
-                return;
+              if ((isLeft ? ballEdge <= paddleEdge : ballEdge >= paddleEdge) && ball.y >= paddle.y && ball.y <= paddle.y + paddle.height && correctDirection) {
+                if (ball.blinking) {
+                  ball.blinking = false; ball.isMain = true; ball.blinkColors = null;
+                  const hitFactor = (ball.y - (paddle.y + paddle.height / 2)) / (paddle.height / 2);
+                  ball.vx = (isLeft ? Math.abs(ball.vx) : -Math.abs(ball.vx)) * 1.1;
+                  ball.vy = ball.vy * 0.5 + hitFactor * 5 + paddle.velocityY * 0.3;
+                  const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                  if (speed > game.maxSpeed) { const ratio = game.maxSpeed / speed; ball.vx *= ratio; ball.vy *= ratio; }
+                  playSound('paddle_white');
+                  return true;
+                } else if (ball.color === '#888888') {
+                  setScores(prev => {
+                    const newScores = isLeft ? { ...prev, right: prev.right + 1 } : { ...prev, left: prev.left + 1 };
+                    if ((isLeft ? newScores.right : newScores.left) >= 11) setGameState('finished');
+                    else { setBlinkingPaddle(side); setGameState('paused'); }
+                    return newScores;
+                  });
+                  return true;
+                }
               }
+              return false;
+            };
+            
+            if (ball.color === '#888888' || ball.blinking) {
+              if (handlePaddleHit(game.paddles.left, 'left')) return;
+              if (handlePaddleHit(game.paddles.right, 'right')) return;
             }
             
-            if (ball.color !== '#888888') {
-              // Left paddle
-              if (ball.x - ball.size <= game.paddles.left.x + game.paddles.left.width &&
-                  ball.y >= game.paddles.left.y &&
-                  ball.y <= game.paddles.left.y + game.paddles.left.height &&
-                  ball.vx < 0) {
+            if (ball.color !== '#888888' && !ball.blinking) {
+              [['left', game.paddles.left, true], ['right', game.paddles.right, false]].forEach(([side, paddle, isLeft]) => {
+                const paddleEdge = isLeft ? paddle.x + paddle.width : paddle.x;
+                const ballEdge = isLeft ? ball.x - ball.size : ball.x + ball.size;
+                const correctDirection = isLeft ? ball.vx < 0 : ball.vx > 0;
                 
-                // 当たった位置を計算（-1.0 ～ +1.0）
-                const hitFactor = (ball.y - (game.paddles.left.y + game.paddles.left.height / 2)) / (game.paddles.left.height / 2);
-                
-                // パドル速度の影響
-                const paddleInfluence = 0.3;
-                
-                ball.vx = Math.abs(ball.vx) * 1.1;
-                ball.vy = ball.vy * 0.5 + hitFactor * 5 + game.paddles.left.velocityY * paddleInfluence;
-                
-                // 速度制限
-                const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-                if (speed > game.maxSpeed) {
-                  const ratio = game.maxSpeed / speed;
-                  ball.vx *= ratio;
-                  ball.vy *= ratio;
+                if ((isLeft ? ballEdge <= paddleEdge : ballEdge >= paddleEdge) && ball.y >= paddle.y && ball.y <= paddle.y + paddle.height && correctDirection) {
+                  const hitFactor = (ball.y - (paddle.y + paddle.height / 2)) / (paddle.height / 2);
+                  ball.vx = (isLeft ? Math.abs(ball.vx) : -Math.abs(ball.vx)) * 1.1;
+                  ball.vy = ball.vy * 0.5 + hitFactor * 5 + paddle.velocityY * 0.3;
+                  const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                  if (speed > game.maxSpeed) { const ratio = game.maxSpeed / speed; ball.vx *= ratio; ball.vy *= ratio; }
+                  playSound(ball.color === '#ffffff' ? 'paddle_white' : 'paddle');
+                  if (gameMode === 'split' && ball.isMain && game.hitCount >= 2 && game.balls.length < 99) {
+                    game.balls.push({ x: ball.x, y: ball.y, vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8, size: 12, isMain: false, color: isLeft ? '#ff4444' : '#4444ff', blinking: false, blinkColors: null });
+                  }
+                  game.hitCount++;
                 }
-                
-                if (ball.color === '#ffffff') {
-                  playSound('paddle_white');
-                } else {
-                  playSound('paddle');
-                }
-                
-                if (gameMode === 'split' && ball.isMain && game.hitCount >= 2 && game.balls.length < 99) {
-                  game.balls.push({
-                    x: ball.x,
-                    y: ball.y,
-                    vx: (Math.random() - 0.5) * 8,
-                    vy: (Math.random() - 0.5) * 8,
-                    size: 12,
-                    isMain: false,
-                    color: '#ff4444'
-                  });
-                }
-                game.hitCount++;
-              }
-              
-              // Right paddle
-              if (ball.x + ball.size >= game.paddles.right.x &&
-                  ball.y >= game.paddles.right.y &&
-                  ball.y <= game.paddles.right.y + game.paddles.right.height &&
-                  ball.vx > 0) {
-                
-                const hitFactor = (ball.y - (game.paddles.right.y + game.paddles.right.height / 2)) / (game.paddles.right.height / 2);
-                const paddleInfluence = 0.3;
-                
-                ball.vx = -Math.abs(ball.vx) * 1.1;
-                ball.vy = ball.vy * 0.5 + hitFactor * 5 + game.paddles.right.velocityY * paddleInfluence;
-                
-                const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-                if (speed > game.maxSpeed) {
-                  const ratio = game.maxSpeed / speed;
-                  ball.vx *= ratio;
-                  ball.vy *= ratio;
-                }
-                
-                if (ball.color === '#ffffff') {
-                  playSound('paddle_white');
-                } else {
-                  playSound('paddle');
-                }
-                
-                if (gameMode === 'split' && ball.isMain && game.hitCount >= 2 && game.balls.length < 99) {
-                  game.balls.push({
-                    x: ball.x,
-                    y: ball.y,
-                    vx: (Math.random() - 0.5) * 8,
-                    vy: (Math.random() - 0.5) * 8,
-                    size: 12,
-                    isMain: false,
-                    color: '#4444ff'
-                  });
-                }
-                game.hitCount++;
-              }
+              });
             }
           });
           
           const mainBalls = game.balls.filter(b => b.isMain);
           if (mainBalls.length === 0 && game.balls.length > 0) {
-            game.balls = [{ 
-              x: game.canvasWidth / 2, 
-              y: game.canvasHeight / 2, 
-              vx: (Math.random() > 0.5 ? 1 : -1) * 5, 
-              vy: (Math.random() - 0.5) * 6, 
-              size: 12, 
-              isMain: true, 
-              color: '#ffffff' 
-            }];
-            game.hitCount = 0;
-            setBallCount(1);
+            game.balls = [{ x: game.canvasWidth / 2, y: game.canvasHeight / 2, vx: (Math.random() > 0.5 ? 1 : -1) * 5, vy: (Math.random() - 0.5) * 6, size: 12, isMain: true, color: '#ffffff', blinking: false, blinkColors: null }];
+            game.hitCount = 0; setBallCount(1);
           }
           
-          const scoringBall = mainBalls.find(b => b.x < 0 || b.x > game.canvasWidth);
+          const scoringBall = mainBalls.find(b => !b.blinking && (b.x < 0 || b.x > game.canvasWidth));
           if (scoringBall) {
-            if (scoringBall.x < 0) {
-              setScores(prev => {
-                const newScores = { ...prev, right: prev.right + 1 };
-                if (newScores.right >= 11) {
-                  setGameState('finished');
-                } else {
-                  setBlinkingPaddle('left');
-                  setGameState('paused');
-                }
-                return newScores;
-              });
-            } else {
-              setScores(prev => {
-                const newScores = { ...prev, left: prev.left + 1 };
-                if (newScores.left >= 11) {
-                  setGameState('finished');
-                } else {
-                  setBlinkingPaddle('right');
-                  setGameState('paused');
-                }
-                return newScores;
-              });
-            }
+            setScores(prev => {
+              const newScores = scoringBall.x < 0 ? { ...prev, right: prev.right + 1 } : { ...prev, left: prev.left + 1 };
+              if ((scoringBall.x < 0 ? newScores.right : newScores.left) >= 11) setGameState('finished');
+              else { setBlinkingPaddle(scoringBall.x < 0 ? 'left' : 'right'); setGameState('paused'); }
+              return newScores;
+            });
           }
-          
-          draw();
-          animationId = requestAnimationFrame(gameLoop);
+          draw(); animationId = requestAnimationFrame(gameLoop);
         };
         
         const draw = () => {
-          ctx.fillStyle = '#000';
-          ctx.fillRect(0, 0, game.canvasWidth, game.canvasHeight);
-          
-          ctx.strokeStyle = '#444';
-          ctx.setLineDash([10, 10]);
-          ctx.beginPath();
-          ctx.moveTo(game.canvasWidth / 2, 0);
-          ctx.lineTo(game.canvasWidth / 2, game.canvasHeight);
-          ctx.stroke();
-          ctx.setLineDash([]);
-          
+          ctx.fillStyle = '#000'; ctx.fillRect(0, 0, game.canvasWidth, game.canvasHeight);
+          ctx.strokeStyle = '#444'; ctx.setLineDash([10, 10]);
+          ctx.beginPath(); ctx.moveTo(game.canvasWidth / 2, 0); ctx.lineTo(game.canvasWidth / 2, game.canvasHeight); ctx.stroke(); ctx.setLineDash([]);
           ctx.fillStyle = '#fff';
-          if (blinkingPaddle !== 'left' || blinkVisible) {
-            ctx.fillRect(game.paddles.left.x, game.paddles.left.y, game.paddles.left.width, game.paddles.left.height);
-          }
-          if (blinkingPaddle !== 'right' || blinkVisible) {
-            ctx.fillRect(game.paddles.right.x, game.paddles.right.y, game.paddles.right.width, game.paddles.right.height);
-          }
-          
+          if (blinkingPaddle !== 'left' || blinkVisible) ctx.fillRect(game.paddles.left.x, game.paddles.left.y, game.paddles.left.width, game.paddles.left.height);
+          if (blinkingPaddle !== 'right' || blinkVisible) ctx.fillRect(game.paddles.right.x, game.paddles.right.y, game.paddles.right.width, game.paddles.right.height);
           if (!blinkingPaddle || blinkVisible) {
             game.balls.forEach(ball => {
-              ctx.fillStyle = ball.color;
-              ctx.beginPath();
-              ctx.arc(ball.x, ball.y, ball.size, 0, Math.PI * 2);
-              ctx.fill();
+              ctx.fillStyle = (ball.blinking && ball.blinkColors) ? (invincibleBlink ? ball.blinkColors[0] : ball.blinkColors[1]) : ball.color;
+              ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.size, 0, Math.PI * 2); ctx.fill();
             });
           }
         };
         
         const handleTouchStart = (e) => {
           e.preventDefault();
-          for (let touch of e.changedTouches) {
-            game.touches[touch.identifier] = {
-              x: touch.clientX,
-              y: touch.clientY,
-              startY: touch.clientY
-            };
-          }
+          for (let touch of e.changedTouches) game.touches[touch.identifier] = { x: touch.clientX, y: touch.clientY, startY: touch.clientY };
         };
         
         const handleTouchMove = (e) => {
           e.preventDefault();
           const rect = canvas.getBoundingClientRect();
-          
           for (let touch of e.changedTouches) {
             if (game.touches[touch.identifier]) {
-              const touchX = touch.clientX - rect.left;
-              const touchY = touch.clientY - rect.top;
-              
-              const scaleX = game.canvasWidth / rect.width;
-              const scaleY = game.canvasHeight / rect.height;
-              
-              const scaledX = touchX * scaleX;
-              const scaledY = touchY * scaleY;
-              
-              if (scaledX < game.canvasWidth / 2) {
-                // 前フレームの位置を保存
-                game.paddles.left.prevY = game.paddles.left.y;
-                
-                // パドル移動速度制限（テレポーテーション防止）
-                const maxMove = 30;
-                const targetY = Math.max(0, Math.min(
-                  game.canvasHeight - game.paddles.left.height,
-                  scaledY - game.paddles.left.height / 2
-                ));
-                const diff = targetY - game.paddles.left.y;
-                const clampedDiff = Math.max(-maxMove, Math.min(maxMove, diff));
-                
-                game.paddles.left.y += clampedDiff;
-              } else {
-                game.paddles.right.prevY = game.paddles.right.y;
-                
-                const maxMove = 30;
-                const targetY = Math.max(0, Math.min(
-                  game.canvasHeight - game.paddles.right.height,
-                  scaledY - game.paddles.right.height / 2
-                ));
-                const diff = targetY - game.paddles.right.y;
-                const clampedDiff = Math.max(-maxMove, Math.min(maxMove, diff));
-                
-                game.paddles.right.y += clampedDiff;
-              }
-              
-              game.touches[touch.identifier] = { x: touchX, y: touchY };
+              const scaleX = game.canvasWidth / rect.width, scaleY = game.canvasHeight / rect.height;
+              const scaledX = (touch.clientX - rect.left) * scaleX, scaledY = (touch.clientY - rect.top) * scaleY;
+              const paddle = scaledX < game.canvasWidth / 2 ? game.paddles.left : game.paddles.right;
+              paddle.prevY = paddle.y;
+              const targetY = Math.max(0, Math.min(game.canvasHeight - paddle.height, scaledY - paddle.height / 2));
+              paddle.y += Math.max(-30, Math.min(30, targetY - paddle.y));
+              game.touches[touch.identifier] = { x: touch.clientX, y: touch.clientY };
             }
           }
         };
         
-        const handleTouchEnd = (e) => {
-          e.preventDefault();
-          for (let touch of e.changedTouches) {
-            delete game.touches[touch.identifier];
-          }
-        };
+        const handleTouchEnd = (e) => { e.preventDefault(); for (let touch of e.changedTouches) delete game.touches[touch.identifier]; };
         
         canvas.addEventListener('touchstart', handleTouchStart);
         canvas.addEventListener('touchmove', handleTouchMove);
         canvas.addEventListener('touchend', handleTouchEnd);
-        
-        if (gameState === 'playing' || gameState === 'paused') {
-          gameLoop(performance.now());
-        }
-        
-        return () => {
-          cancelAnimationFrame(animationId);
-          canvas.removeEventListener('touchstart', handleTouchStart);
-          canvas.removeEventListener('touchmove', handleTouchMove);
-          canvas.removeEventListener('touchend', handleTouchEnd);
-        };
-      }, [gameState, blinkVisible, blinkingPaddle, soundEnabled, gameMode, gameSpeed]);
+        if (gameState === 'playing' || gameState === 'paused') gameLoop(performance.now());
+        return () => { cancelAnimationFrame(animationId); canvas.removeEventListener('touchstart', handleTouchStart); canvas.removeEventListener('touchmove', handleTouchMove); canvas.removeEventListener('touchend', handleTouchEnd); };
+      }, [gameState, blinkVisible, blinkingPaddle, soundEnabled, gameMode, gameSpeed, invincibleBlink]);
       
       const resetGame = () => {
-        setScores({ left: 0, right: 0 });
-        setGameState('menu');
-        setBlinkVisible(true);
-        setBlinkingPaddle(null);
+        setScores({ left: 0, right: 0 }); setGameState('menu'); setBlinkVisible(true); setBlinkingPaddle(null);
         const game = gameRef.current;
-        game.balls = [{ x: 400, y: 300, vx: 5, vy: 3, size: 12, isMain: true, color: '#ffffff' }];
-        game.hitCount = 0;
-        game.paddles.left.prevY = 250;
-        game.paddles.right.prevY = 250;
-        game.paddles.left.velocityY = 0;
-        game.paddles.right.velocityY = 0;
-        setBallCount(1);
+        game.balls = [{ x: 400, y: 300, vx: 5, vy: 3, size: 12, isMain: true, color: '#ffffff', blinking: false, blinkColors: null }];
+        game.hitCount = 0; game.paddles.left.prevY = 250; game.paddles.right.prevY = 250;
+        game.paddles.left.velocityY = 0; game.paddles.right.velocityY = 0; setBallCount(1);
       };
 
       return (
@@ -741,82 +352,35 @@
             <div className="text-white text-5xl font-bold retro-font">{scores.left}</div>
             <div className="text-white text-5xl font-bold retro-font">{scores.right}</div>
           </div>
-          
           <div className="relative w-full max-w-full flex justify-center">
-            <canvas
-              ref={canvasRef}
-              width={CANVAS_WIDTH}
-              height={CANVAS_HEIGHT}
-              className="border-4 border-gray-700 touch-none"
-              style={{ 
-                maxWidth: '100%',
-                maxHeight: '70vh',
-                width: 'auto',
-                height: 'auto',
-                aspectRatio: '4 / 3',
-                display: 'block'
-              }}
-            />
-            
+            <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="border-4 border-gray-700 touch-none" style={{ maxWidth: '100%', maxHeight: '70vh', width: 'auto', height: 'auto', aspectRatio: '4 / 3', display: 'block' }} />
             {gameState === 'menu' && (
               <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-80">
-                <button
-                  onClick={startGame}
-                  className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded text-xl retro-font"
-                >
-                  New Game
-                </button>
+                <button onClick={startGame} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded text-xl retro-font">New Game</button>
               </div>
             )}
-            
             {gameState === 'countdown' && (
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="text-white text-6xl font-bold retro-font">
-                  {countdown > 0 ? countdown : 'GO!'}
-                </div>
+                <div className="text-white text-6xl font-bold retro-font">{countdown > 0 ? countdown : 'GO!'}</div>
               </div>
             )}
-            
             {gameState === 'finished' && (
               <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-80">
                 <div className="text-center">
-                  <div className="text-white text-4xl mb-6 retro-font">
-                    {scores.left >= 11 ? 'P1' : 'P2'} Wins!
-                  </div>
-                  <button
-                    onClick={resetGame}
-                    className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded text-xl retro-font"
-                  >
-                    New Game
-                  </button>
+                  <div className="text-white text-4xl mb-6 retro-font">{scores.left >= 11 ? 'P1' : 'P2'} Wins!</div>
+                  <button onClick={resetGame} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded text-xl retro-font">New Game</button>
                 </div>
               </div>
             )}
           </div>
-          
           <div className="mt-1 mb-8 flex justify-between items-center w-full max-w-4xl px-8 text-gray-400 text-xs retro-font">
             <div>P1</div>
             <div className="flex gap-4 items-center">
-              <button 
-                onClick={toggleSound}
-                className="hover:text-gray-300 cursor-pointer"
-              >
-                SOUND: {soundEnabled ? 'ON' : 'OFF'}
-              </button>
-              <button 
-                onClick={toggleMode}
-                className="hover:text-gray-300 cursor-pointer"
-              >
-                MODE: {gameMode.toUpperCase()}
-              </button>
-              <button 
-                onClick={toggleSpeed}
-                className="hover:text-gray-300 cursor-pointer"
-              >
-                SPEED: {gameSpeed.toUpperCase()}
-              </button>
+              <button onClick={toggleSound} className="hover:text-gray-300 cursor-pointer">SOUND: {soundEnabled ? 'ON' : 'OFF'}</button>
+              <button onClick={toggleMode} className="hover:text-gray-300 cursor-pointer">MODE: {gameMode.toUpperCase()}</button>
+              <button onClick={toggleSpeed} className="hover:text-gray-300 cursor-pointer">SPEED: {gameSpeed.toUpperCase()}</button>
               <span className="text-gray-600">BALLS: {ballCount}</span>
-              <span className="text-gray-600">v3.1</span>
+              <span className="text-gray-600">v3.2</span>
             </div>
             <div>P2</div>
           </div>
@@ -827,6 +391,5 @@
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<PongGame />);
   </script>
-
 </body>
 </html>
