@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>Pong v3.3</title>
+  <title>Pong v3.4</title>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -18,7 +18,10 @@
   </style>
 </head>
 <body>
-  <!-- Version: 3.3 - Fixed white ball blinking on merge, grey+grey collision now blinks white/black -->
+  <!-- Version: 3.4 -->
+  <!-- Fixed blinking ball left/right wall reflection -->
+  <!-- Expanded touch area to full screen (excluding UI buttons) -->
+  <!-- Added wall bounce position correction for stability -->
   <div id="root"></div>
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
@@ -181,8 +184,29 @@
           game.paddles.right.velocityY = (game.paddles.right.y - game.paddles.right.prevY) / Math.max(deltaTime, 0.1);
           game.balls.forEach(ball => { ball.x += ball.vx * speedMultiplier; ball.y += ball.vy * speedMultiplier; });
           game.balls.forEach(ball => {
-            if (ball.y - ball.size <= 0 || ball.y + ball.size >= game.canvasHeight) { ball.vy *= -1; playSound('wall'); }
-            if (!ball.isMain && (ball.x - ball.size <= 0 || ball.x + ball.size >= game.canvasWidth)) { ball.vx *= -1; playSound('wall'); }
+            // 上下の壁反射（位置補正付き）
+            if (ball.y - ball.size <= 0) {
+              ball.y = ball.size;
+              ball.vy = Math.abs(ball.vy);
+              playSound('wall');
+            } else if (ball.y + ball.size >= game.canvasHeight) {
+              ball.y = game.canvasHeight - ball.size;
+              ball.vy = -Math.abs(ball.vy);
+              playSound('wall');
+            }
+            
+            // 左右の壁反射（点滅中のボールとnon-mainボール用）
+            if (ball.blinking || !ball.isMain) {
+              if (ball.x - ball.size <= 0) {
+                ball.x = ball.size;
+                ball.vx = Math.abs(ball.vx);
+                playSound('wall');
+              } else if (ball.x + ball.size >= game.canvasWidth) {
+                ball.x = game.canvasWidth - ball.size;
+                ball.vx = -Math.abs(ball.vx);
+                playSound('wall');
+              }
+            }
           });
           
           if (gameMode === 'split') {
@@ -310,18 +334,21 @@
         };
         
         const handleTouchStart = (e) => {
+          if (e.target.tagName === 'BUTTON') return;
           e.preventDefault();
           for (let touch of e.changedTouches) game.touches[touch.identifier] = { x: touch.clientX, y: touch.clientY, startY: touch.clientY };
         };
         
         const handleTouchMove = (e) => {
+          if (e.target.tagName === 'BUTTON') return;
           e.preventDefault();
           const rect = canvas.getBoundingClientRect();
           for (let touch of e.changedTouches) {
             if (game.touches[touch.identifier]) {
-              const scaleX = game.canvasWidth / rect.width, scaleY = game.canvasHeight / rect.height;
-              const scaledX = (touch.clientX - rect.left) * scaleX, scaledY = (touch.clientY - rect.top) * scaleY;
-              const paddle = scaledX < game.canvasWidth / 2 ? game.paddles.left : game.paddles.right;
+              const scaleY = game.canvasHeight / rect.height;
+              const isLeftSide = touch.clientX < window.innerWidth / 2;
+              const scaledY = (touch.clientY - rect.top) * scaleY;
+              const paddle = isLeftSide ? game.paddles.left : game.paddles.right;
               paddle.prevY = paddle.y;
               const targetY = Math.max(0, Math.min(game.canvasHeight - paddle.height, scaledY - paddle.height / 2));
               paddle.y += Math.max(-30, Math.min(30, targetY - paddle.y));
@@ -330,13 +357,22 @@
           }
         };
         
-        const handleTouchEnd = (e) => { e.preventDefault(); for (let touch of e.changedTouches) delete game.touches[touch.identifier]; };
+        const handleTouchEnd = (e) => { 
+          if (e.target.tagName === 'BUTTON') return;
+          e.preventDefault(); 
+          for (let touch of e.changedTouches) delete game.touches[touch.identifier]; 
+        };
         
-        canvas.addEventListener('touchstart', handleTouchStart);
-        canvas.addEventListener('touchmove', handleTouchMove);
-        canvas.addEventListener('touchend', handleTouchEnd);
+        document.body.addEventListener('touchstart', handleTouchStart, { passive: false });
+        document.body.addEventListener('touchmove', handleTouchMove, { passive: false });
+        document.body.addEventListener('touchend', handleTouchEnd, { passive: false });
         if (gameState === 'playing' || gameState === 'paused') gameLoop(performance.now());
-        return () => { cancelAnimationFrame(animationId); canvas.removeEventListener('touchstart', handleTouchStart); canvas.removeEventListener('touchmove', handleTouchMove); canvas.removeEventListener('touchend', handleTouchEnd); };
+        return () => { 
+          cancelAnimationFrame(animationId); 
+          document.body.removeEventListener('touchstart', handleTouchStart); 
+          document.body.removeEventListener('touchmove', handleTouchMove); 
+          document.body.removeEventListener('touchend', handleTouchEnd); 
+        };
       }, [gameState, blinkVisible, blinkingPaddle, soundEnabled, gameMode, gameSpeed, invincibleBlink]);
       
       const resetGame = () => {
@@ -381,7 +417,7 @@
               <button onClick={toggleMode} className="hover:text-gray-300 cursor-pointer">MODE: {gameMode.toUpperCase()}</button>
               <button onClick={toggleSpeed} className="hover:text-gray-300 cursor-pointer">SPEED: {gameSpeed.toUpperCase()}</button>
               <span className="text-gray-600">BALLS: {ballCount}</span>
-              <span className="text-gray-600">v3.3</span>
+              <span className="text-gray-600">v3.4</span>
             </div>
             <div>P2</div>
           </div>
