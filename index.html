@@ -2,9 +2,9 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>Pong v3.2</title>
+  <title>Pong v3.3</title>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -18,7 +18,7 @@
   </style>
 </head>
 <body>
-  <!-- Version: 3.2 - Blinking white ball mode, bug fixes -->
+  <!-- Version: 3.3 - Fixed white ball blinking on merge, grey+grey collision now blinks white/black -->
   <div id="root"></div>
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
@@ -197,13 +197,14 @@
                   const collisionResult = checkCollision(b1.color, b2.color);
                   if (collisionResult.type === 'complement') {
                     const isNewMain = collisionResult.color === '#ffffff', isGrey = collisionResult.color === '#888888';
-                    ballsToAdd.push({ x: (b1.x + b2.x) / 2, y: (b1.y + b2.y) / 2, vx: b1.vx + b2.vx, vy: b1.vy + b2.vy, size: 12, isMain: false, color: collisionResult.color, blinking: isNewMain, blinkColors: isNewMain ? [b1.color, b2.color] : null });
+                    const colors = (isNewMain && b1.color === '#888888' && b2.color === '#888888') ? ['#ffffff', '#000000'] : [b1.color, b2.color];
+                    ballsToAdd.push({ x: (b1.x + b2.x) / 2, y: (b1.y + b2.y) / 2, vx: b1.vx + b2.vx, vy: b1.vy + b2.vy, size: 12, isMain: false, color: collisionResult.color, blinking: isNewMain, blinkColors: isNewMain ? colors : null });
                     ballsToRemove.add(i); ballsToRemove.add(j);
                     playSound('merge');
                     if (isNewMain) playSound('spawn_white'); else if (isGrey) playSound('spawn_grey');
                   } else if (collisionResult.type === 'merge') {
                     const isNewMain = collisionResult.color === '#ffffff';
-                    ballsToAdd.push({ x: (b1.x + b2.x) / 2, y: (b1.y + b2.y) / 2, vx: b1.vx + b2.vx, vy: b1.vy + b2.vy, size: 12, isMain: isNewMain || b1.isMain || b2.isMain, color: collisionResult.color, blinking: false, blinkColors: null });
+                    ballsToAdd.push({ x: (b1.x + b2.x) / 2, y: (b1.y + b2.y) / 2, vx: b1.vx + b2.vx, vy: b1.vy + b2.vy, size: 12, isMain: isNewMain || b1.isMain || b2.isMain, color: collisionResult.color, blinking: isNewMain, blinkColors: isNewMain ? [b1.color, b2.color] : null });
                     ballsToRemove.add(i); ballsToRemove.add(j);
                     playSound('merge');
                     if (isNewMain) playSound('spawn_white');
@@ -380,7 +381,7 @@
               <button onClick={toggleMode} className="hover:text-gray-300 cursor-pointer">MODE: {gameMode.toUpperCase()}</button>
               <button onClick={toggleSpeed} className="hover:text-gray-300 cursor-pointer">SPEED: {gameSpeed.toUpperCase()}</button>
               <span className="text-gray-600">BALLS: {ballCount}</span>
-              <span className="text-gray-600">v3.2</span>
+              <span className="text-gray-600">v3.3</span>
             </div>
             <div>P2</div>
           </div>
