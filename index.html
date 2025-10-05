@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>Pong v3.6</title>
+  <title>Pong v3.7</title>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -18,7 +18,7 @@
   </style>
 </head>
 <body>
-  <!-- Version: 3.6 - Fixed grey ball instant-death bug by using consistent ball removal pattern -->
+  <!-- Version: 3.7 - Grey #444444, paddle shrink to fixed values (80/40/death), grey decays to white after 8 wall hits, paddle reset on score/white-zero -->
   <div id="root"></div>
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
@@ -79,14 +79,15 @@
           case 'merge': oscillator.frequency.value = 280; gainNode.gain.value = 0.1; break;
           case 'spawn_white': oscillator.frequency.value = 523; gainNode.gain.value = 0.15; break;
           case 'spawn_grey': oscillator.frequency.value = 100; gainNode.gain.value = 0.15; break;
+          case 'grey_decay': oscillator.frequency.value = 400; gainNode.gain.value = 0.12; break;
         }
         oscillator.start();
-        oscillator.stop(ctx.currentTime + (type === 'score' ? 0.2 : type === 'spawn_grey' ? 0.15 : type === 'go' || type === 'spawn_white' ? 0.1 : type === 'merge' ? 0.08 : 0.05));
+        oscillator.stop(ctx.currentTime + (type === 'score' ? 0.2 : type === 'spawn_grey' ? 0.15 : type === 'go' || type === 'spawn_white' || type === 'grey_decay' ? 0.1 : type === 'merge' ? 0.08 : 0.05));
       };
 
       const checkCollision = (color1, color2) => {
-        if (color1 === '#ffffff' && color2 === '#ffffff') return { type: 'complement', color: '#888888' };
-        if (color1 === '#888888' && color2 === '#888888') return { type: 'complement', color: '#ffffff' };
+        if (color1 === '#ffffff' && color2 === '#ffffff') return { type: 'complement', color: '#444444' };
+        if (color1 === '#444444' && color2 === '#444444') return { type: 'complement', color: '#ffffff' };
         if (color1 === color2) {
           const complement = { '#ff4444': '#44ffff', '#44ff44': '#ff44ff', '#4444ff': '#ffff44', '#ffff44': '#4444ff', '#ff44ff': '#44ff44', '#44ffff': '#ff4444' };
           return { type: 'complement', color: complement[color1] };
@@ -94,7 +95,7 @@
         const parseColor = (hex) => ({ r: hex.slice(1, 3), g: hex.slice(3, 5), b: hex.slice(5, 7) });
         const c1 = parseColor(color1), c2 = parseColor(color2);
         const hasOverlap = (c1.r === 'ff' && c2.r === 'ff') || (c1.g === 'ff' && c2.g === 'ff') || (c1.b === 'ff' && c2.b === 'ff');
-        if (color1 === '#888888' || color2 === '#888888') return { type: 'bounce' };
+        if (color1 === '#444444' || color2 === '#444444') return { type: 'bounce' };
         if (hasOverlap) return { type: 'bounce' };
         const newR = (c1.r === 'ff' || c2.r === 'ff') ? 'ff' : '44';
         const newG = (c1.g === 'ff' || c2.g === 'ff') ? 'ff' : '44';
@@ -194,7 +195,6 @@
           game.paddles.left.velocityY = (game.paddles.left.y - game.paddles.left.prevY) / Math.max(deltaTime, 0.1);
           game.paddles.right.velocityY = (game.paddles.right.y - game.paddles.right.prevY) / Math.max(deltaTime, 0.1);
           
-          // Changed from forEach to for loop for consistent ball removal pattern
           for (let i = 0; i < game.balls.length; i++) {
             const ball = game.balls[i];
             ball.x += ball.vx * speedMultiplier;
@@ -207,10 +207,32 @@
               ball.y = ball.size;
               ball.vy = Math.abs(ball.vy);
               playSound('wall');
+              if (ball.color === '#444444') {
+                ball.wallHitCount = (ball.wallHitCount || 0) + 1;
+                if (ball.wallHitCount >= 8) {
+                  ball.color = '#ffffff';
+                  ball.isMain = true;
+                  ball.blinking = true;
+                  ball.blinkColors = ['#444444', '#000000'];
+                  delete ball.wallHitCount;
+                  playSound('grey_decay');
+                }
+              }
             } else if (ball.y + ball.size >= game.canvasHeight) {
               ball.y = game.canvasHeight - ball.size;
               ball.vy = -Math.abs(ball.vy);
               playSound('wall');
+              if (ball.color === '#444444') {
+                ball.wallHitCount = (ball.wallHitCount || 0) + 1;
+                if (ball.wallHitCount >= 8) {
+                  ball.color = '#ffffff';
+                  ball.isMain = true;
+                  ball.blinking = true;
+                  ball.blinkColors = ['#444444', '#000000'];
+                  delete ball.wallHitCount;
+                  playSound('grey_decay');
+                }
+              }
             }
             
             if (ball.blinking || !ball.isMain) {
@@ -218,10 +240,32 @@
                 ball.x = ball.size;
                 ball.vx = Math.abs(ball.vx);
                 playSound('wall');
+                if (ball.color === '#444444') {
+                  ball.wallHitCount = (ball.wallHitCount || 0) + 1;
+                  if (ball.wallHitCount >= 8) {
+                    ball.color = '#ffffff';
+                    ball.isMain = true;
+                    ball.blinking = true;
+                    ball.blinkColors = ['#444444', '#000000'];
+                    delete ball.wallHitCount;
+                    playSound('grey_decay');
+                  }
+                }
               } else if (ball.x + ball.size >= game.canvasWidth) {
                 ball.x = game.canvasWidth - ball.size;
                 ball.vx = -Math.abs(ball.vx);
                 playSound('wall');
+                if (ball.color === '#444444') {
+                  ball.wallHitCount = (ball.wallHitCount || 0) + 1;
+                  if (ball.wallHitCount >= 8) {
+                    ball.color = '#ffffff';
+                    ball.isMain = true;
+                    ball.blinking = true;
+                    ball.blinkColors = ['#444444', '#000000'];
+                    delete ball.wallHitCount;
+                    playSound('grey_decay');
+                  }
+                }
               }
             }
           }
@@ -237,9 +281,11 @@
                 if (distance < b1.size + b2.size) {
                   const collisionResult = checkCollision(b1.color, b2.color);
                   if (collisionResult.type === 'complement') {
-                    const isNewMain = collisionResult.color === '#ffffff', isGrey = collisionResult.color === '#888888';
-                    const colors = (isNewMain && b1.color === '#888888' && b2.color === '#888888') ? ['#ffffff', '#000000'] : [b1.color, b2.color];
-                    ballsToAdd.push({ x: (b1.x + b2.x) / 2, y: (b1.y + b2.y) / 2, vx: b1.vx + b2.vx, vy: b1.vy + b2.vy, size: 12, isMain: false, color: collisionResult.color, blinking: isNewMain, blinkColors: isNewMain ? colors : null });
+                    const isNewMain = collisionResult.color === '#ffffff', isGrey = collisionResult.color === '#444444';
+                    const colors = (isNewMain && b1.color === '#444444' && b2.color === '#444444') ? ['#ffffff', '#000000'] : [b1.color, b2.color];
+                    const newBall = { x: (b1.x + b2.x) / 2, y: (b1.y + b2.y) / 2, vx: b1.vx + b2.vx, vy: b1.vy + b2.vy, size: 12, isMain: false, color: collisionResult.color, blinking: isNewMain, blinkColors: isNewMain ? colors : null };
+                    if (isGrey) newBall.wallHitCount = 0;
+                    ballsToAdd.push(newBall);
                     ballsToRemove.add(i); ballsToRemove.add(j);
                     playSound('merge');
                     if (isNewMain) playSound('spawn_white'); else if (isGrey) playSound('spawn_grey');
@@ -255,7 +301,6 @@
               }
             }
             
-            // Paddle collision detection - now with ball index
             for (let i = 0; i < game.balls.length; i++) {
               if (ballsToRemove.has(i)) continue;
               const ball = game.balls[i];
@@ -277,7 +322,7 @@
                     if (isLeft) { ball.x = paddleEdge + ball.size; } else { ball.x = paddleEdge - ball.size; }
                     playSound('paddle_white');
                     return true;
-                  } else if (ball.color === '#888888') {
+                  } else if (ball.color === '#444444') {
                     if (paddle.greyHitCount >= 2) {
                       setScores(prev => {
                         const newScores = isLeft ? { ...prev, right: prev.right + 1 } : { ...prev, left: prev.left + 1 };
@@ -288,7 +333,7 @@
                       ballsToRemove.add(ballIndex);
                     } else {
                       const centerY = paddle.y + paddle.height / 2;
-                      paddle.height *= 0.5;
+                      paddle.height = paddle.greyHitCount === 0 ? 80 : 40;
                       paddle.y = centerY - paddle.height / 2;
                       paddle.greyHitCount++;
                       ballsToRemove.add(ballIndex);
@@ -299,12 +344,12 @@
                 return false;
               };
               
-              if (ball.color === '#888888' || ball.blinking) {
+              if (ball.color === '#444444' || ball.blinking) {
                 if (handlePaddleHit(game.paddles.left, 'left', i)) continue;
                 if (handlePaddleHit(game.paddles.right, 'right', i)) continue;
               }
               
-              if (ball.color !== '#888888' && !ball.blinking) {
+              if (ball.color !== '#444444' && !ball.blinking) {
                 [['left', game.paddles.left, true], ['right', game.paddles.right, false]].forEach(([side, paddle, isLeft]) => {
                   const paddleEdge = isLeft ? paddle.x + paddle.width : paddle.x;
                   const ballEdge = isLeft ? ball.x - ball.size : ball.x + ball.size;
@@ -336,7 +381,12 @@
           const mainBalls = game.balls.filter(b => b.isMain);
           if (mainBalls.length === 0 && game.balls.length > 0) {
             game.balls = [{ x: game.canvasWidth / 2, y: game.canvasHeight / 2, vx: (Math.random() > 0.5 ? 1 : -1) * 5, vy: (Math.random() - 0.5) * 6, size: 12, isMain: true, color: '#ffffff', blinking: false, blinkColors: null }];
-            game.hitCount = 0; setBallCount(1);
+            game.hitCount = 0;
+            game.paddles.left.height = game.paddles.left.originalHeight;
+            game.paddles.left.greyHitCount = 0;
+            game.paddles.right.height = game.paddles.right.originalHeight;
+            game.paddles.right.greyHitCount = 0;
+            setBallCount(1);
           }
           
           const scoringBall = mainBalls.find(b => !b.blinking && (b.x < 0 || b.x > game.canvasWidth));
@@ -458,7 +508,7 @@
               <button onClick={toggleMode} className="hover:text-gray-300 cursor-pointer">MODE: {gameMode.toUpperCase()}</button>
               <button onClick={toggleSpeed} className="hover:text-gray-300 cursor-pointer">SPEED: {gameSpeed.toUpperCase()}</button>
               <span className="text-gray-600">BALLS: {ballCount}</span>
-              <span className="text-gray-600">v3.6</span>
+              <span className="text-gray-600">v3.7</span>
             </div>
             <div>P2</div>
           </div>
