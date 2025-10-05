@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>Pong v3.7</title>
+  <title>Pong v3.7b</title>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -18,7 +18,7 @@
   </style>
 </head>
 <body>
-  <!-- Version: 3.7 - Grey #444444, paddle shrink to fixed values (80/40/death), grey decays to white after 8 wall hits, paddle reset on score/white-zero -->
+  <!-- Version: 3.7b - Convert grey balls to white on paddle hit instead of removing -->
   <div id="root"></div>
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
@@ -330,14 +330,21 @@
                         else { setBlinkingPaddle(side); setGameState('paused'); }
                         return newScores;
                       });
-                      ballsToRemove.add(ballIndex);
+                      // ballsToRemove.add(ballIndex);
                     } else {
                       const centerY = paddle.y + paddle.height / 2;
                       paddle.height = paddle.greyHitCount === 0 ? 80 : 40;
                       paddle.y = centerY - paddle.height / 2;
                       paddle.greyHitCount++;
-                      ballsToRemove.add(ballIndex);
+                      // ballsToRemove.add(ballIndex);
                     }
+                    // グレーを白(点滅)に変換
+                    ball.color = '#ffffff';
+                    ball.isMain = true;
+                    ball.blinking = true;
+                    ball.blinkColors = ['#444444', '#000000'];
+                    delete ball.wallHitCount;
+                    playSound('grey_decay');
                     return true;
                   }
                 }
@@ -379,15 +386,15 @@
           setBallCount(game.balls.length);
           
           const mainBalls = game.balls.filter(b => b.isMain);
-          if (mainBalls.length === 0 && game.balls.length > 0) {
-            game.balls = [{ x: game.canvasWidth / 2, y: game.canvasHeight / 2, vx: (Math.random() > 0.5 ? 1 : -1) * 5, vy: (Math.random() - 0.5) * 6, size: 12, isMain: true, color: '#ffffff', blinking: false, blinkColors: null }];
-            game.hitCount = 0;
-            game.paddles.left.height = game.paddles.left.originalHeight;
-            game.paddles.left.greyHitCount = 0;
-            game.paddles.right.height = game.paddles.right.originalHeight;
-            game.paddles.right.greyHitCount = 0;
-            setBallCount(1);
-          }
+          // if (mainBalls.length === 0 && game.balls.length > 0) {
+          //   game.balls = [{ x: game.canvasWidth / 2, y: game.canvasHeight / 2, vx: (Math.random() > 0.5 ? 1 : -1) * 5, vy: (Math.random() - 0.5) * 6, size: 12, isMain: true, color: '#ffffff', blinking: false, blinkColors: null }];
+          //   game.hitCount = 0;
+          //   game.paddles.left.height = game.paddles.left.originalHeight;
+          //   game.paddles.left.greyHitCount = 0;
+          //   game.paddles.right.height = game.paddles.right.originalHeight;
+          //   game.paddles.right.greyHitCount = 0;
+          //   setBallCount(1);
+          // }
           
           const scoringBall = mainBalls.find(b => !b.blinking && (b.x < 0 || b.x > game.canvasWidth));
           if (scoringBall) {
@@ -508,7 +515,7 @@
               <button onClick={toggleMode} className="hover:text-gray-300 cursor-pointer">MODE: {gameMode.toUpperCase()}</button>
               <button onClick={toggleSpeed} className="hover:text-gray-300 cursor-pointer">SPEED: {gameSpeed.toUpperCase()}</button>
               <span className="text-gray-600">BALLS: {ballCount}</span>
-              <span className="text-gray-600">v3.7</span>
+              <span className="text-gray-600">v3.7b</span>
             </div>
             <div>P2</div>
           </div>
