@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>Pong v3.5</title>
+  <title>Pong v3.6</title>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -18,7 +18,7 @@
   </style>
 </head>
 <body>
-  <!-- Version: 3.5 - Grey ball shrinks paddle (50%, 3x = death), mirror-angle red/blue spawn, fixed phasing, auto-pause on tab switch -->
+  <!-- Version: 3.6 - Fixed grey ball instant-death bug by using consistent ball removal pattern -->
   <div id="root"></div>
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
@@ -193,8 +193,16 @@
           const speedMultiplier = gameSpeed === 'slow' ? 0.5 : 1.0;
           game.paddles.left.velocityY = (game.paddles.left.y - game.paddles.left.prevY) / Math.max(deltaTime, 0.1);
           game.paddles.right.velocityY = (game.paddles.right.y - game.paddles.right.prevY) / Math.max(deltaTime, 0.1);
-          game.balls.forEach(ball => { ball.x += ball.vx * speedMultiplier; ball.y += ball.vy * speedMultiplier; });
-          game.balls.forEach(ball => {
+          
+          // Changed from forEach to for loop for consistent ball removal pattern
+          for (let i = 0; i < game.balls.length; i++) {
+            const ball = game.balls[i];
+            ball.x += ball.vx * speedMultiplier;
+            ball.y += ball.vy * speedMultiplier;
+          }
+          
+          for (let i = 0; i < game.balls.length; i++) {
+            const ball = game.balls[i];
             if (ball.y - ball.size <= 0) {
               ball.y = ball.size;
               ball.vy = Math.abs(ball.vy);
@@ -216,7 +224,7 @@
                 playSound('wall');
               }
             }
-          });
+          }
           
           if (gameMode === 'split') {
             const ballsToRemove = new Set(), ballsToAdd = [];
@@ -246,77 +254,84 @@
                 }
               }
             }
-            if (ballsToRemove.size > 0) game.balls = game.balls.filter((_, idx) => !ballsToRemove.has(idx));
-            if (ballsToAdd.length > 0) game.balls.push(...ballsToAdd);
-          }
-          
-          setBallCount(game.balls.length);
-          
-          game.balls.forEach(ball => {
-            const handlePaddleHit = (paddle, side) => {
-              const isLeft = side === 'left';
-              const paddleEdge = isLeft ? paddle.x + paddle.width : paddle.x;
-              const ballEdge = isLeft ? ball.x - ball.size : ball.x + ball.size;
-              const correctDirection = isLeft ? ball.vx < 0 : ball.vx > 0;
+            
+            // Paddle collision detection - now with ball index
+            for (let i = 0; i < game.balls.length; i++) {
+              if (ballsToRemove.has(i)) continue;
+              const ball = game.balls[i];
               
-              if ((isLeft ? ballEdge <= paddleEdge : ballEdge >= paddleEdge) && ball.y >= paddle.y && ball.y <= paddle.y + paddle.height && correctDirection) {
-                if (ball.blinking) {
-                  ball.blinking = false; ball.isMain = true; ball.blinkColors = null;
-                  const hitFactor = (ball.y - (paddle.y + paddle.height / 2)) / (paddle.height / 2);
-                  ball.vx = (isLeft ? Math.abs(ball.vx) : -Math.abs(ball.vx)) * 1.1;
-                  ball.vy = ball.vy * 0.5 + hitFactor * 5 + paddle.velocityY * 0.3;
-                  const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-                  if (speed > game.maxSpeed) { const ratio = game.maxSpeed / speed; ball.vx *= ratio; ball.vy *= ratio; }
-                  if (isLeft) { ball.x = paddleEdge + ball.size; } else { ball.x = paddleEdge - ball.size; }
-                  playSound('paddle_white');
-                  return true;
-                } else if (ball.color === '#888888') {
-                  if (paddle.greyHitCount >= 2) {
-                    setScores(prev => {
-                      const newScores = isLeft ? { ...prev, right: prev.right + 1 } : { ...prev, left: prev.left + 1 };
-                      if ((isLeft ? newScores.right : newScores.left) >= 11) setGameState('finished');
-                      else { setBlinkingPaddle(side); setGameState('paused'); }
-                      return newScores;
-                    });
-                  } else {
-                    const centerY = paddle.y + paddle.height / 2;
-                    paddle.height *= 0.5;
-                    paddle.y = centerY - paddle.height / 2;
-                    paddle.greyHitCount++;
-                  }
-                  return true;
-                }
-              }
-              return false;
-            };
-            
-            if (ball.color === '#888888' || ball.blinking) {
-              if (handlePaddleHit(game.paddles.left, 'left')) return;
-              if (handlePaddleHit(game.paddles.right, 'right')) return;
-            }
-            
-            if (ball.color !== '#888888' && !ball.blinking) {
-              [['left', game.paddles.left, true], ['right', game.paddles.right, false]].forEach(([side, paddle, isLeft]) => {
+              const handlePaddleHit = (paddle, side, ballIndex) => {
+                const isLeft = side === 'left';
                 const paddleEdge = isLeft ? paddle.x + paddle.width : paddle.x;
                 const ballEdge = isLeft ? ball.x - ball.size : ball.x + ball.size;
                 const correctDirection = isLeft ? ball.vx < 0 : ball.vx > 0;
                 
                 if ((isLeft ? ballEdge <= paddleEdge : ballEdge >= paddleEdge) && ball.y >= paddle.y && ball.y <= paddle.y + paddle.height && correctDirection) {
-                  const hitFactor = (ball.y - (paddle.y + paddle.height / 2)) / (paddle.height / 2);
-                  ball.vx = (isLeft ? Math.abs(ball.vx) : -Math.abs(ball.vx)) * 1.1;
-                  ball.vy = ball.vy * 0.5 + hitFactor * 5 + paddle.velocityY * 0.3;
-                  const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-                  if (speed > game.maxSpeed) { const ratio = game.maxSpeed / speed; ball.vx *= ratio; ball.vy *= ratio; }
-                  if (isLeft) { ball.x = paddleEdge + ball.size; } else { ball.x = paddleEdge - ball.size; }
-                  playSound(ball.color === '#ffffff' ? 'paddle_white' : 'paddle');
-                  if (gameMode === 'split' && ball.isMain && game.hitCount >= 2 && game.balls.length < 99) {
-                    game.balls.push({ x: ball.x, y: ball.y, vx: ball.vx * 0.6, vy: -ball.vy * 0.6, size: 12, isMain: false, color: isLeft ? '#ff4444' : '#4444ff', blinking: false, blinkColors: null });
+                  if (ball.blinking) {
+                    ball.blinking = false; ball.isMain = true; ball.blinkColors = null;
+                    const hitFactor = (ball.y - (paddle.y + paddle.height / 2)) / (paddle.height / 2);
+                    ball.vx = (isLeft ? Math.abs(ball.vx) : -Math.abs(ball.vx)) * 1.1;
+                    ball.vy = ball.vy * 0.5 + hitFactor * 5 + paddle.velocityY * 0.3;
+                    const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                    if (speed > game.maxSpeed) { const ratio = game.maxSpeed / speed; ball.vx *= ratio; ball.vy *= ratio; }
+                    if (isLeft) { ball.x = paddleEdge + ball.size; } else { ball.x = paddleEdge - ball.size; }
+                    playSound('paddle_white');
+                    return true;
+                  } else if (ball.color === '#888888') {
+                    if (paddle.greyHitCount >= 2) {
+                      setScores(prev => {
+                        const newScores = isLeft ? { ...prev, right: prev.right + 1 } : { ...prev, left: prev.left + 1 };
+                        if ((isLeft ? newScores.right : newScores.left) >= 11) setGameState('finished');
+                        else { setBlinkingPaddle(side); setGameState('paused'); }
+                        return newScores;
+                      });
+                      ballsToRemove.add(ballIndex);
+                    } else {
+                      const centerY = paddle.y + paddle.height / 2;
+                      paddle.height *= 0.5;
+                      paddle.y = centerY - paddle.height / 2;
+                      paddle.greyHitCount++;
+                      ballsToRemove.add(ballIndex);
+                    }
+                    return true;
                   }
-                  game.hitCount++;
                 }
-              });
+                return false;
+              };
+              
+              if (ball.color === '#888888' || ball.blinking) {
+                if (handlePaddleHit(game.paddles.left, 'left', i)) continue;
+                if (handlePaddleHit(game.paddles.right, 'right', i)) continue;
+              }
+              
+              if (ball.color !== '#888888' && !ball.blinking) {
+                [['left', game.paddles.left, true], ['right', game.paddles.right, false]].forEach(([side, paddle, isLeft]) => {
+                  const paddleEdge = isLeft ? paddle.x + paddle.width : paddle.x;
+                  const ballEdge = isLeft ? ball.x - ball.size : ball.x + ball.size;
+                  const correctDirection = isLeft ? ball.vx < 0 : ball.vx > 0;
+                  
+                  if ((isLeft ? ballEdge <= paddleEdge : ballEdge >= paddleEdge) && ball.y >= paddle.y && ball.y <= paddle.y + paddle.height && correctDirection) {
+                    const hitFactor = (ball.y - (paddle.y + paddle.height / 2)) / (paddle.height / 2);
+                    ball.vx = (isLeft ? Math.abs(ball.vx) : -Math.abs(ball.vx)) * 1.1;
+                    ball.vy = ball.vy * 0.5 + hitFactor * 5 + paddle.velocityY * 0.3;
+                    const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                    if (speed > game.maxSpeed) { const ratio = game.maxSpeed / speed; ball.vx *= ratio; ball.vy *= ratio; }
+                    if (isLeft) { ball.x = paddleEdge + ball.size; } else { ball.x = paddleEdge - ball.size; }
+                    playSound(ball.color === '#ffffff' ? 'paddle_white' : 'paddle');
+                    if (gameMode === 'split' && ball.isMain && game.hitCount >= 2 && game.balls.length < 99) {
+                      game.balls.push({ x: ball.x, y: ball.y, vx: ball.vx * 0.6, vy: -ball.vy * 0.6, size: 12, isMain: false, color: isLeft ? '#ff4444' : '#4444ff', blinking: false, blinkColors: null });
+                    }
+                    game.hitCount++;
+                  }
+                });
+              }
             }
-          });
+            
+            if (ballsToRemove.size > 0) game.balls = game.balls.filter((_, idx) => !ballsToRemove.has(idx));
+            if (ballsToAdd.length > 0) game.balls.push(...ballsToAdd);
+          }
+          
+          setBallCount(game.balls.length);
           
           const mainBalls = game.balls.filter(b => b.isMain);
           if (mainBalls.length === 0 && game.balls.length > 0) {
@@ -443,7 +458,7 @@
               <button onClick={toggleMode} className="hover:text-gray-300 cursor-pointer">MODE: {gameMode.toUpperCase()}</button>
               <button onClick={toggleSpeed} className="hover:text-gray-300 cursor-pointer">SPEED: {gameSpeed.toUpperCase()}</button>
               <span className="text-gray-600">BALLS: {ballCount}</span>
-              <span className="text-gray-600">v3.5</span>
+              <span className="text-gray-600">v3.6</span>
             </div>
             <div>P2</div>
           </div>
