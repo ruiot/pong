@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen">
+  <title>Pong</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: #000;
+      overflow: hidden;
+      touch-action: none;
+      -webkit-user-select: none; user-select: none;
+      font-family: 'Press Start 2P', 'Courier New', monospace;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100dvh;
+      align-items: center;
+      justify-content: center;
+      padding: env(safe-area-inset-top, 0)
+               env(safe-area-inset-right, 0)
+               env(safe-area-inset-bottom, 0)
+               env(safe-area-inset-left, 0);
+    }
+
+    /* ── Score bar ── */
+    #hud {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      max-width: 820px;
+      padding: 2px 24px 4px;
+      color: #fff;
+      font-size: clamp(22px, 5.5vw, 44px);
+      flex-shrink: 0;
+    }
+
+    /* ── Canvas wrapper ── */
+    #canvas-wrap {
+      position: relative;
+      width: 100%;
+      max-width: 820px;
+      flex: 1 1 0;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    canvas {
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      touch-action: none;
+      border: 2px solid #222;
+    }
+
+    /* ── Overlays (menus) ── */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      background: rgba(0, 0, 0, 0.82);
+      color: #fff;
+    }
+    .overlay.hidden { display: none; }
+
+    .overlay-title {
+      font-size: clamp(18px, 4vw, 34px);
+      letter-spacing: 0.05em;
+    }
+    .overlay-sub {
+      font-size: clamp(7px, 1.6vw, 12px);
+      color: #888;
+      text-align: center;
+      line-height: 2;
+      max-width: 80%;
+    }
+
+    .btn {
+      background: #1a56db;
+      color: #fff;
+      font-family: inherit;
+      font-size: clamp(10px, 2.2vw, 15px);
+      padding: 12px 28px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      min-width: 48px;
+      min-height: 48px;
+    }
+    .btn:active { background: #1e429f; }
+
+    /* ── Serve hint (shown on canvas) ── */
+    #serve-hint {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      font-size: clamp(11px, 2.8vw, 20px);
+      color: rgba(255,255,255,0.55);
+    }
+    #serve-hint.hidden { display: none; }
+
+    /* ── Footer controls bar ── */
+    #footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 820px;
+      padding: 3px 10px 2px;
+      font-size: clamp(5px, 1.4vw, 9px);
+      color: #555;
+      flex-shrink: 0;
+      gap: 4px;
+    }
+    .player-tag { color: #777; min-width: 18px; }
+    #settings { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
+    #settings button {
+      background: none; border: none;
+      color: #555; font-family: inherit;
+      font-size: inherit;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      padding: 6px 8px;
+      min-height: 36px;
+    }
+    #settings button:active { color: #eee; }
+    #ball-count { color: #333; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <div id="hud">
+    <span id="score-left">0</span>
+    <span id="score-right">0</span>
+  </div>
+
+  <div id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+
+    <!-- Menu -->
+    <div id="overlay-menu" class="overlay">
+      <div class="overlay-title">PONG</div>
+      <div class="overlay-sub">
+        Touch left half &rarr; P1<br>
+        Touch right half &rarr; P2
+      </div>
+      <button class="btn" id="btn-start">NEW GAME</button>
+    </div>
+
+    <!-- Finished -->
+    <div id="overlay-finished" class="overlay hidden">
+      <div class="overlay-title" id="winner-text">P1 WINS!</div>
+      <button class="btn" id="btn-restart">PLAY AGAIN</button>
+    </div>
+
+    <!-- Paused -->
+    <div id="overlay-paused" class="overlay hidden">
+      <div class="overlay-title">PAUSED</div>
+      <button class="btn" id="btn-resume">RESUME</button>
+    </div>
+
+    <!-- Serve hint (transparent overlay, no background) -->
+    <div id="serve-hint" class="hidden">
+      <span id="serve-text">P1 SERVE — MOVE PADDLE</span>
+    </div>
+  </div>
+
+  <div id="footer">
+    <span class="player-tag">P1</span>
+    <div id="settings">
+      <button id="btn-sound">SFX: ON</button>
+      <button id="btn-mode">MODE: SPLIT</button>
+      <button id="btn-speed">SPEED: NORMAL</button>
+      <span id="ball-count">BALLS: 1</span>
+    </div>
+    <span class="player-tag">P2</span>
+  </div>
+
+</div>
+
+<script>
+'use strict';
+
+/* ================================================================
+   CONSTANTS
+================================================================ */
+const CW = 800, CH = 550;          // logical canvas size
+const PW = 16, PH = 110;           // paddle width / default height
+const PM = 42;                     // paddle x-margin from edge
+const BR = 11;                     // ball radius
+const WIN_SCORE  = 11;
+const MAX_BALLS  = 18;
+const BLINK_MS   = 1100;           // how long a newly merged ball blinks
+const MAX_SPEED  = 14;
+const GREY_WALL_LIMIT = 8;         // wall hits before grey → white
+const SPAWN_AFTER_HITS = 2;        // hit count before sub-balls spawn
+const WHITE = '#ffffff';
+const GREY  = '#444444';
+const PADDLE_COLOR = { left: '#ff4444', right: '#4444ff' };
+const SPEED_MULT  = { slow: 0.45, normal: 0.70, fast: 1.0 };
+
+/* ================================================================
+   AUDIO
+   Simple oscillator beeps via Web Audio API.
+================================================================ */
+const SFX = (() => {
+  let ac = null, on = true;
+
+  function ensure() {
+    if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  function beep(hz, vol, sec) {
+    if (!on || !ac) return;
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain);
+    gain.connect(ac.destination);
+    osc.frequency.value = hz;
+    gain.gain.value = vol;
+    osc.start();
+    osc.stop(ac.currentTime + sec);
+  }
+
+  return {
+    init()       { ensure(); },
+    toggle()     { on = !on; return on; },
+    isOn()       { return on; },
+    wall()       { beep(180, 0.07, 0.04); },
+    paddle()     { beep(220, 0.10, 0.05); },
+    paddleHit()  { beep(350, 0.12, 0.05); },
+    score()      { beep(150, 0.15, 0.20); },
+    serve()      { beep(440, 0.12, 0.10); },
+    merge()      { beep(280, 0.10, 0.08); },
+    spawnWhite() { beep(523, 0.15, 0.10); },
+    spawnGrey()  { beep(100, 0.15, 0.15); },
+    greyDecay()  { beep(400, 0.12, 0.10); },
+  };
+})();
+
+/* ================================================================
+   COLOR MIXING  (split mode)
+   Palette: WHITE, GREY, R, G, B, Y(RG), M(RB), C(GB)
+   Each color's channels are either 'ff' (high) or '44' (low).
+
+   Rules:
+     grey  + anything  → bounce (elastic)
+     A     + A         → merge into complement(A)
+     A     + B, shared channel  → bounce
+     A     + B, no overlap      → merge by OR-ing channels
+================================================================ */
+const ColorMix = (() => {
+  const COMP = {
+    [WHITE]: GREY, [GREY]: WHITE,
+    '#ff4444': '#44ffff', '#44ffff': '#ff4444',
+    '#44ff44': '#ff44ff', '#ff44ff': '#44ff44',
+    '#4444ff': '#ffff44', '#ffff44': '#4444ff',
+  };
+
+  // Index positions in '#rrggbb' for first hex digit of each channel
+  const RI = 1, GI = 3, BI = 5;
+
+  function collide(c1, c2) {
+    if (c1 === GREY || c2 === GREY) return 'bounce';
+    if (c1 === c2) return COMP[c1] ?? WHITE;
+    const overlap = (c1[RI] === 'f' && c2[RI] === 'f') ||
+                    (c1[GI] === 'f' && c2[GI] === 'f') ||
+                    (c1[BI] === 'f' && c2[BI] === 'f');
+    if (overlap) return 'bounce';
+    const r = (c1[RI] === 'f' || c2[RI] === 'f') ? 'ff' : '44';
+    const g = (c1[GI] === 'f' || c2[GI] === 'f') ? 'ff' : '44';
+    const b = (c1[BI] === 'f' || c2[BI] === 'f') ? 'ff' : '44';
+    return `#${r}${g}${b}`;
+  }
+
+  return { collide, COMP };
+})();
+
+/* ================================================================
+   GAME STATE
+================================================================ */
+// phase: 'menu' | 'serving' | 'playing' | 'paused' | 'finished'
+const G = {
+  phase: 'menu',
+  prevPhase: 'playing',
+  score: { left: 0, right: 0 },
+  serveSide: 'left',
+  settings: { mode: 'split', speed: 'normal' },
+  hitCount: 0,
+  balls: [],
+  paddles: {
+    left:  newPaddle(PM,          (CH - PH) / 2),
+    right: newPaddle(CW - PM - PW, (CH - PH) / 2),
+  },
+};
+
+function newPaddle(x, y) {
+  return { x, y, w: PW, h: PH, baseH: PH, greyHits: 0, vy: 0, prevY: y };
+}
+
+function newBall(x, y, vx, vy, color = WHITE, isMain = true) {
+  return {
+    x, y, vx, vy, r: BR,
+    color,
+    isMain,
+    isGrey: color === GREY,
+    blinking: false,
+    blinkTimer: 0,
+    wallHits: 0,
+  };
+}
+
+/* ================================================================
+   PHYSICS HELPERS
+================================================================ */
+function clampSpeed(ball) {
+  const spd = Math.hypot(ball.vx, ball.vy);
+  if (spd > MAX_SPEED) { const k = MAX_SPEED / spd; ball.vx *= k; ball.vy *= k; }
+}
+
+function elasticCollide(a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 0.001) return;
+  const nx = dx / dist, ny = dy / dist;
+
+  // Normal-velocity components before collision
+  const an = a.vx * nx + a.vy * ny;
+  const bn = b.vx * nx + b.vy * ny;
+  // Tangential components (unchanged)
+  const atx = a.vx - an * nx, aty = a.vy - an * ny;
+  const btx = b.vx - bn * nx, bty = b.vy - bn * ny;
+  // Swap normal components (equal-mass elastic)
+  a.vx = bn * nx + atx; a.vy = bn * ny + aty;
+  b.vx = an * nx + btx; b.vy = an * ny + bty;
+
+  clampSpeed(a); clampSpeed(b);
+
+  // Separate overlapping balls
+  const overlap = (a.r + b.r) - dist;
+  if (overlap > 0) {
+    a.x -= overlap * nx * 0.5; a.y -= overlap * ny * 0.5;
+    b.x += overlap * nx * 0.5; b.y += overlap * ny * 0.5;
+  }
+}
+
+function paddleOverlap(ball, paddle, side) {
+  // Returns true if ball is currently intersecting the paddle face
+  const isLeft = side === 'left';
+  const face = isLeft ? paddle.x + paddle.w : paddle.x;
+  const ballFace = isLeft ? ball.x - ball.r : ball.x + ball.r;
+  const movingToward = isLeft ? ball.vx < 0 : ball.vx > 0;
+  return movingToward &&
+         (isLeft ? ballFace <= face : ballFace >= face) &&
+         ball.y + ball.r >= paddle.y &&
+         ball.y - ball.r <= paddle.y + paddle.h;
+}
+
+function bouncePaddle(ball, paddle, side) {
+  const isLeft = side === 'left';
+  const hitFactor = (ball.y - (paddle.y + paddle.h / 2)) / (paddle.h / 2);
+  const spd = Math.max(Math.hypot(ball.vx, ball.vy) * 1.07 + 0.4, 5);
+  const clampedSpd = Math.min(spd, MAX_SPEED);
+  ball.vx = isLeft ? Math.abs(ball.vx) : -Math.abs(ball.vx);
+  // Preserve ratio but re-scale to new speed
+  ball.vx = (ball.vx < 0 ? -1 : 1) * clampedSpd * 0.82;
+  ball.vy  = hitFactor * 6 + paddle.vy * 0.35;
+  clampSpeed(ball);
+  // Unstick from paddle face
+  const face = isLeft ? paddle.x + paddle.w : paddle.x;
+  ball.x = isLeft ? face + ball.r + 1 : face - ball.r - 1;
+}
+
+/* ================================================================
+   SCORE / ROUND MANAGEMENT
+================================================================ */
+function addScore(scorer) {
+  G.score[scorer]++;
+  updateScoreUI();
+  SFX.score();
+  resetPaddles();
+
+  if (G.score[scorer] >= WIN_SCORE) {
+    G.phase = 'finished';
+    showOverlay('finished');
+    el('winner-text').textContent = (scorer === 'left' ? 'P1' : 'P2') + ' WINS!';
+  } else {
+    setupServe(scorer);   // scorer serves next
+  }
+}
+
+function resetPaddles() {
+  for (const side of ['left', 'right']) {
+    const p = G.paddles[side];
+    p.h = p.baseH;
+    p.greyHits = 0;
+    p.y = (CH - p.h) / 2;
+    p.prevY = p.y;
+    p.vy = 0;
+  }
+}
+
+function setupServe(side) {
+  G.phase = 'serving';
+  G.serveSide = side;
+  G.hitCount = 0;
+  G.balls = [];
+
+  const p = G.paddles[side];
+  const bx = side === 'left' ? p.x + p.w + BR + 4 : p.x - BR - 4;
+  G.balls = [newBall(bx, p.y + p.h / 2, 0, 0, WHITE, true)];
+
+  showOverlay(null);
+  el('serve-hint').classList.remove('hidden');
+  el('serve-text').textContent = (side === 'left' ? 'P1' : 'P2') + ' SERVE \u2014 MOVE PADDLE';
+  updateBallCountUI();
+}
+
+function launchBall(moveDelta) {
+  if (G.phase !== 'serving') return;
+  const ball = G.balls[0];
+  if (!ball) return;
+  const dir = G.serveSide === 'left' ? 1 : -1;
+  ball.vx = dir * 5;
+  ball.vy = moveDelta * 1.6;
+  clampSpeed(ball);
+  G.phase = 'playing';
+  el('serve-hint').classList.add('hidden');
+  SFX.serve();
+}
+
+/* ================================================================
+   INPUT  (touch + keyboard fallback)
+================================================================ */
+const Input = (() => {
+  const active = {};   // touchId → { side }
+  let canvas = null;
+
+  function sideFor(clientX) {
+    const rect = canvas.getBoundingClientRect();
+    return clientX < rect.left + rect.width / 2 ? 'left' : 'right';
+  }
+  function scaledY(clientY) {
+    const rect = canvas.getBoundingClientRect();
+    return ((clientY - rect.top) / rect.height) * CH;
+  }
+
+  function onStart(e) {
+    if (e.target.tagName === 'BUTTON') return;
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      active[t.identifier] = { side: sideFor(t.clientX) };
+    }
+  }
+  function onMove(e) {
+    if (e.target.tagName === 'BUTTON') return;
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      const info = active[t.identifier];
+      if (!info) continue;
+      const paddle = G.paddles[info.side];
+      paddle.prevY = paddle.y;
+      const targetY = Math.max(0, Math.min(CH - paddle.h, scaledY(t.clientY) - paddle.h / 2));
+      const delta   = Math.max(-30, Math.min(30, targetY - paddle.y));
+      paddle.y += delta;
+      if (G.phase === 'serving' && info.side === G.serveSide && Math.abs(delta) > 1.5) {
+        launchBall(delta);
+      }
+    }
+  }
+  function onEnd(e) {
+    if (e.target.tagName === 'BUTTON') return;
+    e.preventDefault();
+    for (const t of e.changedTouches) delete active[t.identifier];
+  }
+
+  // Keyboard fallback (useful for desktop testing)
+  const keys = {};
+  window.addEventListener('keydown', e => { keys[e.key] = true; });
+  window.addEventListener('keyup',   e => { keys[e.key] = false; });
+
+  function applyKeyboard(dt) {
+    const speed = 10 * (dt / 16.67);
+    if (keys['w'] || keys['W']) movePaddleKey('left',  -speed);
+    if (keys['s'] || keys['S']) movePaddleKey('left',   speed);
+    if (keys['ArrowUp'])        movePaddleKey('right', -speed);
+    if (keys['ArrowDown'])      movePaddleKey('right',  speed);
+  }
+  function movePaddleKey(side, delta) {
+    const p = G.paddles[side];
+    p.prevY = p.y;
+    p.y = Math.max(0, Math.min(CH - p.h, p.y + delta));
+    if (G.phase === 'serving' && side === G.serveSide && Math.abs(delta) > 1.5) {
+      launchBall(delta);
+    }
+  }
+
+  return {
+    init(cvs) {
+      canvas = cvs;
+      document.body.addEventListener('touchstart', onStart, { passive: false });
+      document.body.addEventListener('touchmove',  onMove,  { passive: false });
+      document.body.addEventListener('touchend',   onEnd,   { passive: false });
+    },
+    applyKeyboard,
+  };
+})();
+
+/* ================================================================
+   UPDATE  — called each frame while playing or serving
+================================================================ */
+function onGreyWallHit(ball) {
+  if (!ball.isGrey) return;
+  if (ball.blinking) { ball.blinking = false; ball.blinkTimer = 0; return; }
+  ball.wallHits = (ball.wallHits || 0) + 1;
+  if (ball.wallHits >= GREY_WALL_LIMIT) {
+    ball.color  = WHITE;
+    ball.isGrey = false;
+    ball.isMain = true;
+    ball.blinking   = true;
+    ball.blinkTimer = 0;
+    ball.wallHits   = 0;
+    SFX.greyDecay();
+  }
+}
+
+function update(dt) {
+  if (G.phase === 'serving') {
+    // Keep the ball glued to the serving paddle
+    const p = G.paddles[G.serveSide];
+    const ball = G.balls[0];
+    if (ball) {
+      ball.x = G.serveSide === 'left' ? p.x + p.w + BR + 4 : p.x - BR - 4;
+      ball.y = p.y + p.h / 2;
+    }
+    return;
+  }
+  if (G.phase !== 'playing') return;
+
+  const sm = SPEED_MULT[G.settings.speed];
+  const { balls, paddles } = G;
+
+  // ── Paddle velocity tracking ──
+  for (const side of ['left', 'right']) {
+    const p = paddles[side];
+    p.vy     = (p.y - p.prevY) / Math.max(dt / 16.67, 0.1);
+    p.prevY  = p.y;
+  }
+
+  // ── Move balls + tick blink timers ──
+  for (const ball of balls) {
+    ball.x += ball.vx * sm;
+    ball.y += ball.vy * sm;
+    if (ball.blinking) {
+      ball.blinkTimer += dt;
+      if (ball.blinkTimer >= BLINK_MS) { ball.blinking = false; ball.blinkTimer = 0; }
+    }
+  }
+
+  // ── Wall collisions ──
+  for (const ball of balls) {
+    if (ball.y - ball.r < 0)  { ball.y = ball.r;       ball.vy =  Math.abs(ball.vy); SFX.wall(); onGreyWallHit(ball); }
+    if (ball.y + ball.r > CH) { ball.y = CH - ball.r;  ball.vy = -Math.abs(ball.vy); SFX.wall(); onGreyWallHit(ball); }
+
+    // Sub-balls and blinking balls bounce off left/right walls instead of scoring
+    if (!ball.isMain || ball.blinking) {
+      if (ball.x - ball.r < 0)  { ball.x = ball.r;       ball.vx =  Math.abs(ball.vx); SFX.wall(); onGreyWallHit(ball); }
+      if (ball.x + ball.r > CW) { ball.x = CW - ball.r;  ball.vx = -Math.abs(ball.vx); SFX.wall(); onGreyWallHit(ball); }
+    }
+  }
+
+  // ── Check if main ball scored ──
+  for (const ball of balls) {
+    if (ball.isMain && !ball.blinking) {
+      if (ball.x + ball.r < 0)  { addScore('right'); return; }
+      if (ball.x - ball.r > CW) { addScore('left');  return; }
+    }
+  }
+
+  // ── Ball-ball collisions (split mode only) ──
+  const toRemove = new Set();
+  const toAdd    = [];
+
+  if (G.settings.mode === 'split') {
+    for (let i = 0; i < balls.length; i++) {
+      if (toRemove.has(i)) continue;
+      for (let j = i + 1; j < balls.length; j++) {
+        if (toRemove.has(j)) continue;
+        const a = balls[i], b = balls[j];
+        if (Math.hypot(b.x - a.x, b.y - a.y) >= a.r + b.r) continue;
+
+        const result = ColorMix.collide(a.color, b.color);
+        if (result === 'bounce') {
+          elasticCollide(a, b);
+          SFX.paddle();
+        } else {
+          // Merge into new ball
+          const merged = newBall(
+            (a.x + b.x) / 2, (a.y + b.y) / 2,
+            a.vx + b.vx, a.vy + b.vy,
+            result,
+            result === WHITE
+          );
+          merged.isGrey    = result === GREY;
+          merged.blinking  = true;
+          merged.blinkTimer = 0;
+          clampSpeed(merged);
+          toAdd.push(merged);
+          toRemove.add(i); toRemove.add(j);
+
+          SFX.merge();
+          if (result === WHITE) SFX.spawnWhite();
+          else if (result === GREY) SFX.spawnGrey();
+        }
+        break; // only one collision per ball per frame
+      }
+    }
+  }
+
+  // ── Paddle collisions ──
+  for (let i = 0; i < balls.length; i++) {
+    if (toRemove.has(i)) continue;
+    const ball = balls[i];
+
+    for (const side of ['left', 'right']) {
+      const paddle = paddles[side];
+      if (!paddleOverlap(ball, paddle, side)) continue;
+
+      if (ball.blinking) {
+        // Blinking (invincible) ball: stop blinking, become main, normal bounce
+        ball.blinking   = false;
+        ball.blinkTimer = 0;
+        ball.isMain     = true;
+        bouncePaddle(ball, paddle, side);
+        SFX.paddleHit();
+
+      } else if (ball.isGrey) {
+        // Grey ball: shrink paddle or score penalty
+        if (paddle.greyHits >= 2) {
+          // Paddle already at minimum — score for the OTHER player
+          const scorer = side === 'left' ? 'right' : 'left';
+          toRemove.add(i);
+          // Apply pending removals/adds before calling addScore (which resets state)
+          G.balls = G.balls.filter((_, idx) => !toRemove.has(idx));
+          G.balls.push(...toAdd);
+          addScore(scorer);
+          return;
+        } else {
+          // Shrink paddle
+          const centerY = paddle.y + paddle.h / 2;
+          paddle.h = paddle.greyHits === 0 ? 80 : 40;
+          paddle.y = Math.max(0, Math.min(CH - paddle.h, centerY - paddle.h / 2));
+          paddle.greyHits++;
+          // Convert grey ball → white
+          ball.color   = WHITE;
+          ball.isGrey  = false;
+          ball.isMain  = true;
+          ball.blinking   = true;
+          ball.blinkTimer = 0;
+          bouncePaddle(ball, paddle, side);
+          SFX.paddleHit();
+        }
+
+      } else {
+        // Normal ball
+        bouncePaddle(ball, paddle, side);
+        SFX[ball.color === WHITE ? 'paddleHit' : 'paddle']();
+        G.hitCount++;
+
+        // Split mode: spawn a colored sub-ball after enough hits
+        if (G.settings.mode === 'split' && ball.isMain &&
+            G.hitCount > SPAWN_AFTER_HITS && balls.length + toAdd.length < MAX_BALLS) {
+          const sc = PADDLE_COLOR[side];
+          const dir = side === 'left' ? 1 : -1;
+          const sub = newBall(
+            ball.x, ball.y,
+            dir * Math.abs(ball.vx) * 0.55,
+            -ball.vy * 0.65,
+            sc, false
+          );
+          clampSpeed(sub);
+          toAdd.push(sub);
+        }
+      }
+
+      break; // only one paddle per ball per frame
+    }
+  }
+
+  // ── Apply pending changes ──
+  if (toRemove.size) G.balls = G.balls.filter((_, i) => !toRemove.has(i));
+  if (toAdd.length)  G.balls.push(...toAdd);
+
+  updateBallCountUI();
+}
+
+/* ================================================================
+   RENDERER
+================================================================ */
+const Renderer = (() => {
+  let ctx = null;
+  let blinkOn    = true;
+  let lastBlink  = 0;
+  const BLINK_IV = 75; // ms per blink half-cycle
+
+  function draw(ts) {
+    if (!ctx) return;
+
+    // Blink ticker (used for ball invincibility and serve glow)
+    if (ts - lastBlink > BLINK_IV) { blinkOn = !blinkOn; lastBlink = ts; }
+
+    // Background
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, CW, CH);
+
+    // Centre dashed line
+    ctx.save();
+    ctx.strokeStyle = '#2a2a2a';
+    ctx.lineWidth   = 2;
+    ctx.setLineDash([12, 12]);
+    ctx.beginPath(); ctx.moveTo(CW / 2, 0); ctx.lineTo(CW / 2, CH); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Paddles
+    for (const side of ['left', 'right']) {
+      const p = G.paddles[side];
+      // Colour indicates health: white → orange (1 hit) → red (2 hits = danger)
+      ctx.fillStyle = p.greyHits === 0 ? '#ffffff' : p.greyHits === 1 ? '#ffaa22' : '#ff3333';
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+    }
+
+    // Balls
+    for (const ball of G.balls) {
+      if (ball.blinking && !blinkOn) continue; // invisible frame during blink
+      ctx.fillStyle = ball.color;
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Serve glow ring around ball
+    if (G.phase === 'serving' && G.balls[0]) {
+      const ball = G.balls[0];
+      const pulse = blinkOn ? 7 : 4;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth   = 2.5;
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.r + pulse, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  return {
+    init(c) { ctx = c; },
+    draw,
+  };
+})();
+
+/* ================================================================
+   UI HELPERS
+================================================================ */
+function el(id) { return document.getElementById(id); }
+
+function showOverlay(which) {
+  for (const id of ['overlay-menu', 'overlay-finished', 'overlay-paused']) {
+    el(id).classList.add('hidden');
+  }
+  if (which) el('overlay-' + which).classList.remove('hidden');
+}
+
+function updateScoreUI() {
+  el('score-left').textContent  = G.score.left;
+  el('score-right').textContent = G.score.right;
+}
+
+function updateBallCountUI() {
+  el('ball-count').textContent = 'BALLS: ' + G.balls.length;
+}
+
+function updateSettingsUI() {
+  el('btn-sound').textContent = 'SFX: '   + (SFX.isOn()          ? 'ON'  : 'OFF');
+  el('btn-mode').textContent  = 'MODE: '  + G.settings.mode.toUpperCase();
+  el('btn-speed').textContent = 'SPEED: ' + G.settings.speed.toUpperCase();
+}
+
+/* ================================================================
+   MAIN LOOP
+================================================================ */
+let raf = null, lastTs = 0;
+
+function loop(ts) {
+  const dt = lastTs ? Math.min(ts - lastTs, 50) : 16.67;
+  lastTs = ts;
+
+  Input.applyKeyboard(dt);
+  update(dt);
+  Renderer.draw(ts);
+  raf = requestAnimationFrame(loop);
+}
+
+/* ================================================================
+   GAME LIFECYCLE
+================================================================ */
+function startNewGame() {
+  G.score = { left: 0, right: 0 };
+  updateScoreUI();
+  resetPaddles();
+  G.hitCount = 0;
+  showOverlay(null);
+  setupServe('left');
+  if (!raf) raf = requestAnimationFrame(loop);
+}
+
+function returnToMenu() {
+  G.phase = 'menu';
+  G.balls = [];
+  G.score = { left: 0, right: 0 };
+  updateScoreUI();
+  updateBallCountUI();
+  resetPaddles();
+  el('serve-hint').classList.add('hidden');
+  showOverlay('menu');
+  if (!raf) raf = requestAnimationFrame(loop);
+}
+
+/* ================================================================
+   INIT
+================================================================ */
+window.addEventListener('DOMContentLoaded', () => {
+  const canvas = el('canvas');
+  canvas.width  = CW;
+  canvas.height = CH;
+  Renderer.init(canvas.getContext('2d'));
+  Input.init(canvas);
+
+  // Buttons
+  el('btn-start').addEventListener('click', () => {
+    SFX.init();
+    startNewGame();
+  });
+  el('btn-restart').addEventListener('click', startNewGame);
+  el('btn-resume').addEventListener('click', () => {
+    G.phase = G.prevPhase;
+    showOverlay(null);
+    if (G.phase === 'serving') {
+      el('serve-hint').classList.remove('hidden');
+    }
+  });
+
+  el('btn-sound').addEventListener('click', () => {
+    SFX.init();
+    SFX.toggle();
+    updateSettingsUI();
+  });
+  el('btn-mode').addEventListener('click', () => {
+    G.settings.mode = G.settings.mode === 'split' ? 'classic' : 'split';
+    updateSettingsUI();
+  });
+  el('btn-speed').addEventListener('click', () => {
+    const order = ['slow', 'normal', 'fast'];
+    const idx = order.indexOf(G.settings.speed);
+    G.settings.speed = order[(idx + 1) % order.length];
+    updateSettingsUI();
+  });
+
+  // Auto-pause when tab goes to background
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && (G.phase === 'playing' || G.phase === 'serving')) {
+      G.prevPhase = G.phase;
+      G.phase     = 'paused';
+      showOverlay('paused');
+    }
+  });
+
+  // Start render loop immediately (renders menu + idle canvas)
+  raf = requestAnimationFrame(loop);
+  updateSettingsUI();
+});
+</script>
+</body>
+</html>
